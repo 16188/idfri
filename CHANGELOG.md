@@ -1,0 +1,59 @@
+# Changelog
+
+## Unreleased
+
+- 将主程序迁移到独立的 `16188/idfri` 单提交仓库，移除 GitHub Fork 关系和旧仓库品牌，统一公开项目、支持、更新 API、发布白名单与文档校验信息，并保持 Rust 格式检查通过；上游法定声明、Firefox 引擎名称及兼容协议标识继续保留。
+- 限制 Firefox 兼容工作流只响应 `main` 分支，并让 Linux/macOS 只验证已固定的 Firefox 运行时，避免 Release 标签重复构建或错误要求仅支持 Windows 的 IDFRI Chromium。
+- 将 Chromium 153 源码迁移到独立的 `16188/idfri-browser` 单提交仓库，固定主程序到新的初始提交，并重新发布原 ZIP、安装器与 SHA-256 校验文件；旧 Fork 仅改名备份，法定许可证与第三方声明继续保留。
+- 完成自构建 IDFRI Browser 153 Windows x64 内核发布并替换临时 ClearCote Chromium 150；桌面安装包固定校验归档与 `chrome.exe` SHA-256，并同步更新 CI 来源证明、缓存和中文预览发布校验。
+- 同步 IDFRI Browser 153 的 BSD-3-Clause 作者 NOTICE 回归校验，并保留 ungoogled-chromium 设置页不兼容时不强制修改默认搜索引擎的启动兼容策略。
+- 按每个资料的代理真实出口 IP 自动同步 IANA 时区、浏览器时间、`Accept-Language`、`navigator.languages` 与 Intl locale；新建、更换代理、缺少设置时启动和手动同步均覆盖 Chromium 与 AliasMode Firefox，并保留手动时区/语言覆盖；动态住宅代理按本次实时出口同步，检测失败只跳过自动同步，绝不阻止资料新建、保存或打开。
+- 增加资料级启动页、加密备注、新建资料标签与 Cookie 导入，以及真正传入 IDFRI Chromium 内核的 UA、语言、CPU、内存、像素比、WebRTC、WebGL/WebGPU、Canvas/音频/ClientRects 噪声、媒体设备、字体、SpeechVoices、地理位置、DNT 和硬件加速设置；自定义配置随本地导出完整保留，并校验媒体设备与地理位置的成组输入，同时保持旧 CSV/XLSX 列位置不变。
+- 移除桌面主界面和资料列表的固定宽度上限，使软件最大化后完整铺满可用窗口，同时保持内容区安全边距。
+- 允许本地资料手动填写并校验 IANA 时区，同步 Firefox 持久指纹配置，并在代理时区自动查询失败时明确提示而不是静默保留旧值。
+- 临时接入经过归档与可执行文件双重 SHA-256 校验的 ClearCote Chromium 150 开源内核，同步桌面运行时元数据、Local API 启动契约、许可证回归测试和未签名预览发布校验；预览内核不再因其设置页不兼容而强制修改默认搜索引擎，使用无重复项的确定性中文 Windows 指纹参数，并继续并行构建最终的 IDFRI Chromium 153。
+- Pin Chromium provenance to the IDFRI Browser source revision that retries transient Windows Node/Rollup build crashes within the existing CI time budget.
+- Replace legacy CloakBrowser fingerprint flags with a deterministic, complete IDFRI Chromium persona delivered through standard input so profile JSON never appears in process arguments or plaintext temporary files.
+- Localize the remaining managed Chromium integrity errors and identify the runtime as IDFRI Browser.
+- Replace the Playwright-downloaded Chromium binary with the pinned, SHA-256-verified IDFRI Browser Windows x64 source build and propagate its runtime identity through packaging, provenance, and desktop verification.
+- Add a provenance-checked workflow that publishes the current successful Windows candidate as an explicitly unsigned Chinese development preview.
+- Translate the remaining visible profile-session, extension-upload, account, autofill, and script-runtime copy into Chinese and apply IDFRI branding to the bundled autofill extension.
+- Stabilize Windows tests by isolating production-boundary fixtures from host process scans and tolerating runner-owned temporary SQLite handles that Bun retains until process exit.
+- Add the reproducible `16188/idfri-browser` Chromium source build, apply IDFRI branding and Chinese browser UI, force managed Chromium launches to `zh-CN`, point the visible developer identity to the IDFRI project, and translate the remaining proxy tools, scripts, Trash, diagnostics, client-side errors, proxy-input validation, and matching UI/API test fixtures into Chinese.
+- Secure the Local API with a per-launch 256-bit bearer token plus strict loopback Host and same-origin validation.
+- Encrypt profile credentials, proxy authentication, cookies, and session state with AES-256-GCM using a master key held by Windows Credential Manager.
+- Make the Community Edition local-only: migrate legacy mode selections to Local, keep Cloud clients, sync, and remote MCP unavailable at runtime, and close legacy Cloud HTTP routes.
+- Replace the proprietary CloakBrowser payload with the open Playwright Chromium runtime pinned by executable SHA-256.
+- Add a Token-, Host-, and Origin-protected Local API gateway for native Firefox automation tools.
+- Rebrand Windows executables, installers, application data, update assets, and CI artifacts as IDFRI.
+- Require Authenticode signing for release installers before creating the signed Tauri updater manifest.
+- Replace the upstream updater trust key with a dedicated IDFRI keypair kept outside version control.
+- Make release workflow contract tests portable across LF and CRLF checkouts.
+- Disable the obsolete installed Cloud acceptance job for the local-only edition.
+- Add Chinese local-edition UI copy, IDFRI window branding, project links, and shutdown dialogs while retaining the AliasMode Firefox engine name.
+- Remove the upstream proxy promotion and all of its UI slots, remove Cloud/community links, tighten the desktop external-link allowlist, localize updater-facing messages, and align identity-card tests with the new labels.
+- Align source-start tests with the IDFRI Chromium environment variables and the local-only configuration migration; retire the obsolete Cloud cross-device acceptance test.
+- Localize shared dashboard labels, fingerprint controls, updater progress, and proxy-check feedback; remove the unreachable Cloud mode-switch confirmation UI and its dead state.
+- Localize the reachable profile roster, bulk actions, update banner, pagination, and extension-management screens.
+- Localize logs, cookies, profile create/edit, import, and file-update dialogs; rename downloaded examples from AliasMode to IDFRI.
+- Replace obsolete upstream dashboard assertions with IDFRI local-edition UI contracts and publish Chinese build, security, and contribution guidance.
+- Stop redistributing AliasMode Firefox's bundled proprietary operating-system fonts; packaged and source-installed runtimes now use fonts already installed on the host.
+- Point agent bootstrap, upgrade acceptance, installer paths, registry checks, and release URLs at the IDFRI product and `16188/idfri` repository.
+- Finish the visible Chinese labels for update checks, proxy checks, and the Chromium profile option.
+- Repair update-attempt recovery to validate the IDFRI registry keys and `IDFRI.exe` instead of obsolete AliasMode installation records.
+- Remove the two Cloud-only MCP tools from the local edition's advertised and callable tool surface, and rename MCP product descriptions to IDFRI.
+- Correct the Local API contract to document required Bearer authentication and the IDFRI Chromium runtime.
+- Finish active release, Agent bootstrap, CI, and desktop-service branding; restrict bootstrap downloads to the IDFRI fork.
+- Repair Windows acceptance paths for packaged Chromium and IDFRI updater state; skip previous-version acceptance only when no earlier IDFRI release exists.
+- Localize durable updater results and remaining reachable desktop errors; rename logs and exports to IDFRI.
+- Prevent profile-encryption keys and other `IDFRI_*` secrets from reaching user Playwright scripts.
+- Align release and managed-browser contract tests with the IDFRI artifact and Chromium names.
+- Make public-document hashes stable across LF and CRLF checkouts.
+- Allow a write-authorized manual Client CI run to provide release artifacts when Fork push events are suppressed.
+- Align the installed-runtime background-window contract tests with the IDFRI name.
+- Apply the Rust formatter output required by CI.
+- Stabilize Windows CI cleanup and Python runner timing under parallel build load.
+- Authenticate desktop and Agent readiness probes against the protected Local API.
+- Preserve sidecar logs when installed runtime acceptance fails so startup faults remain diagnosable.
+- Publish the local runtime descriptor immediately after sidecar verification instead of depending on dynamic capability or WebView initialization.
+- Restore the established desktop-sidecar protocol identifier so packaged runtimes can complete their authenticated readiness handshake.

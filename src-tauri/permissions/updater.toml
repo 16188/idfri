@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-update-bridge"
+description = "Allows the IDFRI UI to check for and install verified IDFRI updates."
+commands.allow = ["check_for_updates", "last_update_result", "update_now"]

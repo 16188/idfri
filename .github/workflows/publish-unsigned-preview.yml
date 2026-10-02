@@ -1,0 +1,127 @@
+name: Publish unsigned Windows preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Client CI run containing idfri-windows-candidate
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: idfri-unsigned-preview
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify and publish unsigned preview
+    runs-on: windows-latest
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+      - run: bun install --frozen-lockfile
+      - name: Validate source run
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:GITHUB_REF -cne "refs/heads/main" -or $env:INSTALLER_RUN_ID -notmatch '^[1-9][0-9]*$') {
+            throw "preview publishing requires main and a positive Client CI run ID"
+          }
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:INSTALLER_RUN_ID" | ConvertFrom-Json
+          if ($run.name -cne "Client CI" -or $run.path -cne ".github/workflows/ci.yml" -or
+              $run.status -cne "completed" -or $run.conclusion -cne "success" -or
+              $run.head_branch -cne "main" -or $run.head_sha -cne $env:GITHUB_SHA -or
+              $run.repository.full_name -cne $env:GITHUB_REPOSITORY -or
+              $run.head_repository.full_name -cne $env:GITHUB_REPOSITORY) {
+            throw "preview source must be a successful Client CI run for the current main commit"
+          }
+      - uses: actions/download-artifact@v4
+        with:
+          name: idfri-windows-candidate
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.run_id }}
+      - name: Verify candidate
+        id: verify
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = [string](Get-Content ".\src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).version
+          $fullName = "IDFRI_${version}_x64-offline-setup.exe"
+          $manifest = Get-Content ".\candidate\artifact-manifest.json" -Raw | ConvertFrom-Json
+          if ($manifest.schema -ne 1 -or $manifest.role -cne "candidate" -or
+              $manifest.source -cne $env:GITHUB_SHA -or $manifest.version -cne $version -or
+              [string]$manifest.productKey -notmatch '^[a-f0-9]{64}$') {
+            throw "candidate provenance is invalid"
+          }
+          $payload = @(
+            $fullName,
+            "IDFRI_${version}_x64-setup.exe",
+            "browser.json",
+            "SHA256SUMS.txt",
+            "size-report.json"
+          )
+          $arguments = @(
+            ".\candidate", "--role", "candidate", "--source", $env:GITHUB_SHA,
+            "--version", $version, "--product-key", [string]$manifest.productKey
+          )
+          foreach ($name in $payload) { $arguments += @("--file", $name) }
+          & bun scripts/windows-artifact-manifest.ts verify @arguments
+          if ($LASTEXITCODE -ne 0) { throw "candidate manifest verification failed" }
+
+          $installer = Join-Path ".\candidate" $fullName
+          $stream = [IO.File]::OpenRead($installer)
+          try {
+            if ($stream.ReadByte() -ne 0x4d -or $stream.ReadByte() -ne 0x5a) {
+              throw "preview installer is not a Windows PE file"
+            }
+          } finally {
+            $stream.Dispose()
+          }
+          if ((Get-AuthenticodeSignature -FilePath $installer).Status -ne "NotSigned") {
+            throw "development preview must remain unsigned"
+          }
+          $browser = Get-Content ".\candidate\browser.json" -Raw | ConvertFrom-Json
+          if ($browser.executable -cne "chrome.exe" -or
+              [string]$browser.runtimeVersion -cne "idfri-browser@153.0.8010.52-idfri.2" -or
+              [string]$browser.sha256 -cne "74a095427ba38407405eb63ea330070278236838cf8f91532d8d66a42243096a") {
+            throw "candidate does not contain the approved IDFRI Browser 153 runtime"
+          }
+
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            ".\candidate\SHA256SUMS-preview.txt",
+            "$hash  $fullName`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+          "installer=$fullName" | Add-Content $env:GITHUB_OUTPUT
+          "tag=preview-$version-chromium153-$env:GITHUB_RUN_NUMBER" | Add-Content $env:GITHUB_OUTPUT
+          "title=IDFRI $version 中文开发预览版（Chromium 153）" | Add-Content $env:GITHUB_OUTPUT
+      - name: Publish GitHub prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER: ${{ steps.verify.outputs.installer }}
+          RELEASE_TAG: ${{ steps.verify.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.verify.outputs.title }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          gh release create $env:RELEASE_TAG `
+            ".\candidate\$env:INSTALLER" `
+            ".\candidate\SHA256SUMS-preview.txt#SHA256SUMS.txt" `
+            ".\candidate\browser.json" `
+            --target $env:GITHUB_SHA `
+            --prerelease `
+            --title $env:RELEASE_TITLE `
+            --notes "IDFRI 中文本地版开发预览，内置经过归档与可执行文件双重 SHA-256 校验的自构建 IDFRI Browser 153。本安装包尚未进行 Authenticode 代码签名，仅供当前开发测试使用。"

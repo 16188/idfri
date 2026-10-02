@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "product": "IDFRI",
+  "platforms": ["windows-x64"],
+  "wingetId": "IDFRI.IDFRI",
+  "releaseManifest": "https://github.com/16188/idfri/releases/download/v{version}/idfri-agent-bootstrap.json",
+  "bootstrapScript": "scripts/install-agent.ps1",
+  "installedHelper": "%LOCALAPPDATA%\\IDFRI\\idfri-mcp.exe",
+  "mcp": {
+    "transport": "stdio",
+    "command": "%LOCALAPPDATA%\\IDFRI\\playwright\\node\\node.exe",
+    "args": ["%LOCALAPPDATA%\\IDFRI\\playwright\\agent\\mcp-host.mjs"]
+  }
+}

@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-runtime-ready"
+description = "Allows the IDFRI UI to publish non-secret agent runtime readiness."
+commands.allow = ["agent_runtime_ready"]
+
+[[permission]]
+identifier = "allow-script-capability"
+description = "Allows the trusted IDFRI window to authenticate script operations."
+commands.allow = ["script_capability"]

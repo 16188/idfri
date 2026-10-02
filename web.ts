@@ -1,0 +1,422 @@
+/**
+ * Dashboard + API server. Serves the Phase A web UI at "/" and routes
+ * `/ui/api/*` to the dashboard API, with the AdsPower-compatible API
+ * (handleRequest) as the fallback — so automation `/api/v1|v2/*` calls are
+ * unaffected. The HTML import lives only here so unit tests (which import
+ * server.ts / ui.ts) never trigger React bundling.
+ */
+
+import index from "./web/index.html";
+import { profileDisplayNo, type Launcher } from "./launcher.ts";
+import type { ProfileStore } from "./store.ts";
+import type { RemoteCoordinator } from "./remote.ts";
+import type { AppConfigStore } from "./app-config.ts";
+import type { CloudAuthRuntime } from "./cloud-auth.ts";
+import type { CloudConnectionRuntime } from "./cloud-connection.ts";
+import type { CloudBrowserLifecycle } from "./cloud-browser.ts";
+import type { McpTunnelLifecycle } from "./mcp-tunnel.ts";
+import type { PendingSyncRuntime } from "./pending-sync.ts";
+import type { StatePaths } from "./paths.ts";
+import {
+  handleRequest,
+  handleRemoteBrowserControl,
+  handleCloudBrowserControl,
+  handleAutomationHealthSnapshot,
+  isAdsPowerBrowserControl,
+  isLoopbackAddress,
+  type BrowserLifecycleContext,
+} from "./server.ts";
+import { handleUiRequest, type UiHealthMetadata } from "./ui.ts";
+import { ScriptLibrary, ScriptSupervisor } from "./scripts.ts";
+import {
+  authorizeLocalApiRequest,
+  createLocalApiToken,
+} from "./local-api-auth.ts";
+
+import { handleUserApi, type ProfileRoster } from "./adspower-users.ts";
+import {
+  AGENT_CONTROL_MAX_MESSAGE_BYTES,
+  AGENT_CONTROL_PATH,
+  AGENT_CONTROL_PROTOCOL,
+  AgentControlHub,
+  type AgentControlSession,
+} from "./agent-control.ts";
+import type { FirefoxOwner } from "./firefox-runtime.ts";
+import {
+  LifecycleAdmissionController,
+  dispatchWithLifecycleAdmission,
+  type LifecycleAdmissionOptions,
+} from "./lifecycle-admission.ts";
+
+export interface DashboardServerOptions {
+  launcher: Launcher;
+  store: ProfileStore;
+  /** When set, the dashboard routes profiles/open/close/import/move via the hub. */
+  remote?: RemoteCoordinator | null;
+  appConfig?: AppConfigStore;
+  paths?: StatePaths;
+  defaultCloudUrl?: string;
+  cloudAuth?: CloudAuthRuntime;
+  cloudConnection?: CloudConnectionRuntime;
+  pendingSync?: PendingSyncRuntime;
+  cloudBrowser?: CloudBrowserLifecycle;
+  mcpTunnel?: McpTunnelLifecycle;
+  port?: number;
+  /**
+   * Bind address. Loopback only by default — the dashboard and API are
+   * unauthenticated and can start/stop browsers, so they must not be reachable
+   * from other hosts. Remote access is Phase B (VPS behind Tailscale + auth).
+   */
+  hostname?: string;
+  log?: (msg: string) => void;
+  lifecycleAdmissionOptions?: LifecycleAdmissionOptions;
+  lifecycleAdmission?: LifecycleAdmissionController;
+  health?: UiHealthMetadata | null;
+  /** Desktop-generated nonce used by the installed agent adapter. */
+  agentNonce?: string;
+  firefoxCall?: (owner: FirefoxOwner, operation: string, payload: Record<string, unknown>) => Promise<unknown>;
+}
+
+type AgentSocketData = {
+  session: AgentControlSession;
+};
+
+function escapeHtml(s: unknown): string {
+  return String(s ?? "").replace(/[&<>"]/g, (c) => (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }) as Record<string, string>)[c]!);
+}
+
+/**
+ * AdsPower-style identity card for one profile: Name / Profile-No / Group / Platform /
+ * Proxy and stored identity data only. This page never makes an egress lookup:
+ * the operator can use the dashboard's explicit proxy check when needed.
+ */
+function renderProfileCard(store: ProfileStore, id: string): Response {
+  const p = store.getProfile(id);
+  if (!p) return new Response("unknown profile", { status: 404, headers: { "content-type": "text/plain" } });
+  const engine = typeof p === "object" && "engine" in p && p.engine === "firefox" ? "firefox" : "chromium";
+  const browser = engine === "firefox" ? "AliasMode Firefox" : "IDFRI Browser";
+  const capabilities = engine === "firefox"
+    ? "原生 Firefox 资料 · 不支持 CDP、PDF 或 Chrome 扩展"
+    : "IDFRI Chromium 内核 · 支持 CDP、PDF 和 Chrome 扩展";
+  // Same number the browser window title and identity bookmark show: the
+  // operator's custom NO. first, the store serial as fallback.
+  const no = profileDisplayNo(p.customNo, store.getSerial(id)) ?? "?";
+  const proxy = p.proxy ? `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` : "none";
+  const title = `${p.name || "profile"} · #${no}`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>
+  body{font-family:'Segoe UI',system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
+  .hero{background:linear-gradient(135deg,#1d4ed8,#2563eb);padding:26px;text-align:center}
+  .browser{font-size:22px;font-weight:700;letter-spacing:.5px} .capabilities{opacity:.9;margin-top:4px}
+  .card{max-width:640px;margin:22px auto;background:#1e293b;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+  h2{padding:16px 20px 6px;margin:0;font-size:15px;letter-spacing:.5px;opacity:.6;text-transform:uppercase}
+  .row{display:flex;justify-content:space-between;gap:16px;padding:13px 20px;border-top:1px solid #334155}
+  .k{opacity:.65} .v{font-weight:600;text-align:right;word-break:break-all}
+</style></head>
+<body>
+  <div class="hero"><div class="browser">${escapeHtml(browser)}</div><div class="capabilities">${escapeHtml(capabilities)}</div></div>
+  <div class="card">
+    <h2>账号资料</h2>
+    <div class="row"><span class="k">名称</span><span class="v">${escapeHtml(p.name)}</span></div>
+    <div class="row"><span class="k">资料编号 / ID</span><span class="v">${escapeHtml(no)} / ${escapeHtml(id)}</span></div>
+    <div class="row"><span class="k">分组</span><span class="v">${escapeHtml(p.group) || "—"}</span></div>
+    <div class="row"><span class="k">平台</span><span class="v">${escapeHtml(p.platform) || "—"}</span></div>
+    <div class="row"><span class="k">浏览器</span><span class="v">${escapeHtml(browser)}</span></div>
+    <div class="row"><span class="k">时区</span><span class="v">${escapeHtml(p.timezone) || "—"}</span></div>
+    <div class="row"><span class="k">代理</span><span class="v">${escapeHtml(proxy)}</span></div>
+  </div>
+</body></html>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+function cloudAutomationError(req: Request, opts: DashboardServerOptions): Response | null {
+  if (opts.appConfig?.read().mode !== "cloud" || opts.remote) return null;
+  const pathname = new URL(req.url).pathname;
+  if (
+    opts.cloudBrowser &&
+    (pathname === "/api/v1/status" || pathname === "/status" || isAdsPowerBrowserControl(pathname) ||
+      isCloudProfileRoute(req))
+  ) {
+    return null;
+  }
+  return Response.json(
+    { ok: false, error: "IDFRI 本地版不提供此 Cloud API 路由" },
+    { status: 503 },
+  );
+}
+
+function automationHealthResponse(
+  req: Request,
+  clientAddress: string | undefined,
+  remote: RemoteCoordinator | null | undefined,
+): Response | Promise<Response> | null {
+  if (new URL(req.url).pathname !== "/api/xactions/health-snapshot") return null;
+  if (!isLoopbackAddress(clientAddress)) {
+    return Response.json({ ok: false, error: "loopback access only" }, { status: 403 });
+  }
+  if (!remote) {
+    return Response.json({ ok: false, error: "remote hub is not configured" }, { status: 503 });
+  }
+  return handleAutomationHealthSnapshot(req, remote);
+}
+
+/** AdsPower list/create routes backed by Cloud folders and profiles. */
+function isCloudProfileRoute(req: Request): boolean {
+  const pathname = new URL(req.url).pathname;
+  return (req.method === "GET" && (pathname === "/api/v1/group/list" || pathname === "/api/v1/user/list")) ||
+    (req.method === "POST" && (pathname === "/api/v1/group/create" || pathname === "/api/v1/user/create"));
+}
+
+async function handleAutomationRequest(
+  req: Request,
+  opts: DashboardServerOptions,
+  lifecycle: BrowserLifecycleContext,
+): Promise<Response> {
+  const { launcher, store } = opts;
+  if (!opts.remote && opts.cloudBrowser && isCloudProfileRoute(req)) {
+    const cloudBrowser = opts.cloudBrowser;
+    try {
+      const listGroups = async () => {
+        if (!opts.cloudConnection) throw new Error("Cloud connection is unavailable");
+        const { folders } = await opts.cloudConnection.client.listFolders();
+        return folders.filter((folder) => folder.archivedAt === null).map((folder) => folder.name);
+      };
+      const roster: ProfileRoster = {
+        listProfiles: async () => (await cloudBrowser.listRoster()).profiles,
+        listGroups,
+        createGroup: async (name) => {
+          if (!(await listGroups()).includes(name)) await opts.cloudConnection!.client.createFolder(name);
+        },
+        createProfile: (profile) => cloudBrowser.create(profile),
+      };
+      const users = await handleUserApi(req, launcher, store, null, undefined, roster);
+      if (users) return users;
+    } catch (error) {
+      return Response.json({ code: -1, msg: error instanceof Error ? error.message : String(error), data: {} });
+    }
+  }
+  const users = await handleUserApi(req, launcher, store, opts.remote);
+  if (users) return users;
+  const pathname = new URL(req.url).pathname;
+  if (opts.remote && isAdsPowerBrowserControl(pathname)) {
+    return handleRemoteBrowserControl(req, opts.remote, launcher, store, lifecycle);
+  }
+  if (opts.cloudBrowser && isAdsPowerBrowserControl(pathname)) {
+    return handleCloudBrowserControl(req, opts.cloudBrowser, launcher, store, lifecycle);
+  }
+  return handleRequest(req, launcher, store, lifecycle);
+}
+
+async function handleFirefoxGateway(req: Request, hub: AgentControlHub): Promise<Response | null> {
+  const url = new URL(req.url);
+  const list = req.method === "GET" && url.pathname === "/api/firefox/v1/tools";
+  const call = req.method === "POST" && url.pathname === "/api/firefox/v1/tools/call";
+  if (!list && !call) return null;
+
+  let params: Record<string, unknown>;
+  if (list) {
+    params = { profileId: url.searchParams.get("profile_id") ?? "" };
+  } else {
+    const body = await req.text();
+    if (!body || Buffer.byteLength(body) > AGENT_CONTROL_MAX_MESSAGE_BYTES) {
+      return Response.json({ ok: false, error: { code: "invalid_request", message: "request body size is invalid" } }, { status: 400 });
+    }
+    try {
+      params = JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      return Response.json({ ok: false, error: { code: "invalid_request", message: "request body must be valid JSON" } }, { status: 400 });
+    }
+  }
+
+  const session = hub.connect();
+  try {
+    const response = await session.enqueue(JSON.stringify({
+      protocol: AGENT_CONTROL_PROTOCOL,
+      id: 1,
+      method: list ? "firefox.tools.list" : "firefox.tools.call",
+      params,
+    }));
+    return Response.json(response, { status: response.ok ? 200 : 400, headers: { "cache-control": "no-store" } });
+  } finally {
+    await session.disconnect();
+  }
+}
+
+export function serveAutomationApi(opts: Omit<DashboardServerOptions, "hostname">) {
+  const { port = 50400 } = opts;
+  const hostname = "127.0.0.1";
+  const log = opts.log ?? ((m) => console.log(`[idfri] ${m}`));
+  const admission = opts.lifecycleAdmission ?? new LifecycleAdmissionController(opts.lifecycleAdmissionOptions);
+  const lifecycle = { admission };
+  const localApiToken = opts.agentNonce ?? createLocalApiToken();
+  const agentHub = new AgentControlHub({
+    launcher: opts.launcher,
+    store: opts.store,
+    admission,
+    firefoxCall: opts.firefoxCall,
+    remote: opts.remote,
+    cloudBrowser: opts.cloudBrowser,
+    cloudConnection: opts.cloudConnection,
+    log,
+  });
+  try {
+    const server = Bun.serve({
+      port,
+      hostname,
+      idleTimeout: 240,
+      fetch: async (req, server) => {
+        const denied = authorizeLocalApiRequest(req, localApiToken);
+        if (denied) return denied;
+        const firefox = await handleFirefoxGateway(req, agentHub);
+        if (firefox) return firefox;
+        const health = automationHealthResponse(req, server.requestIP(req)?.address, opts.remote);
+        if (health) return health;
+        return dispatchWithLifecycleAdmission(req, admission, async () => {
+          const cloudError = cloudAutomationError(req, opts);
+          if (cloudError) return cloudError;
+          return handleAutomationRequest(req, opts, lifecycle);
+        });
+      },
+    });
+    log(`automation API on http://${hostname}:${server.port}`);
+    if (!opts.agentNonce) log(`Local API token: ${localApiToken}`);
+    return Object.assign(server, { localApiToken });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const message = `automation API could not bind to http://${hostname}:${port}: ${detail}`;
+    log(message);
+    throw new Error(message);
+  }
+}
+
+export function serveDesktopAutomationApi(opts: Omit<DashboardServerOptions, "hostname" | "port">) {
+  try {
+    return serveAutomationApi({ ...opts, port: 50400 });
+  } catch {
+    return undefined;
+  }
+}
+
+export function serveDashboard(opts: DashboardServerOptions) {
+  const { launcher, store, port = 50400, hostname = "127.0.0.1" } = opts;
+  const runtimeMode = opts.appConfig?.read().mode;
+  const log = opts.log ?? ((m) => console.log(`[idfri] ${m}`));
+  const admission = opts.lifecycleAdmission ?? new LifecycleAdmissionController(opts.lifecycleAdmissionOptions);
+  const lifecycle = { admission };
+  const agentNonce = opts.agentNonce;
+  const localApiToken = agentNonce ?? createLocalApiToken();
+  const agentHub = agentNonce
+    ? new AgentControlHub({
+        launcher,
+        store,
+        admission,
+        remote: opts.remote,
+        cloudBrowser: opts.cloudBrowser,
+        cloudConnection: opts.cloudConnection,
+        firefoxCall: opts.firefoxCall,
+        log,
+      })
+    : undefined;
+  const library = agentNonce && opts.paths ? new ScriptLibrary(opts.paths.root, false) : undefined;
+  const scripts = library && agentNonce ? {
+    library, nonce: agentNonce,
+    runner: new ScriptSupervisor({
+      root: opts.paths!.root, library, launcher, store, admission,
+      remote: opts.remote, cloudBrowser: opts.cloudBrowser, cloudConnection: opts.cloudConnection, log,
+    }),
+  } : undefined;
+  const server = Bun.serve<AgentSocketData>({
+    port,
+    hostname,
+    // Queue wait plus a complete remote restore can legitimately hold a lifecycle
+    // response for several minutes while the shared transition cap does its job.
+    idleTimeout: 240,
+    // Development mode watches the app folder for hot reload. On Windows that
+    // watcher leaks kernel memory on every database write until the host stalls.
+    development: false,
+    routes: { "/": index },
+    websocket: {
+      maxPayloadLength: AGENT_CONTROL_MAX_MESSAGE_BYTES,
+      message(socket, message) {
+        const raw = typeof message === "string" ? message : new Uint8Array(message);
+        void socket.data.session.enqueue(raw).then((response) => {
+          socket.send(JSON.stringify(response));
+        });
+      },
+      close(socket) {
+        void socket.data.session.disconnect();
+      },
+    },
+    fetch: async (req, server) => {
+      const reqUrl = new URL(req.url);
+      if ((reqUrl.pathname === "/ui/api/scripts" || reqUrl.pathname.startsWith("/ui/api/scripts/"))
+        && !isLoopbackAddress(server.requestIP(req)?.address)) {
+        return Response.json({ ok: false, error: "loopback access only" }, { status: 403 });
+      }
+      if (reqUrl.pathname === AGENT_CONTROL_PATH) {
+        if (!isLoopbackAddress(server.requestIP(req)?.address)) {
+          return Response.json({ ok: false, error: "loopback access only" }, { status: 403 });
+        }
+        if (!agentHub || !agentNonce) {
+          return Response.json({ ok: false, error: "agent control is unavailable" }, { status: 503 });
+        }
+        if (req.headers.get("sec-websocket-protocol") !== AGENT_CONTROL_PROTOCOL) {
+          return Response.json({ ok: false, error: "agent protocol mismatch" }, { status: 426 });
+        }
+        const denied = authorizeLocalApiRequest(req, localApiToken);
+        if (denied) return denied;
+        const session = agentHub.connect();
+        const upgraded = server.upgrade(req, {
+          data: { session },
+        });
+        if (!upgraded) {
+          void session.disconnect();
+          return Response.json({ ok: false, error: "WebSocket upgrade failed" }, { status: 400 });
+        }
+        return undefined;
+      }
+      // The automation client publishes through this local coordinator without entering the
+      // browser lifecycle admission queue. Even if the dashboard is deliberately
+      // bound beyond loopback, this ingestion route remains local-only.
+      const health = automationHealthResponse(req, server.requestIP(req)?.address, opts.remote);
+      if (health) return authorizeLocalApiRequest(req, localApiToken) ?? health;
+      if (opts.cloudBrowser && req.method === "POST" && reqUrl.pathname === "/ui/api/profiles/update-file") {
+        // A large batch must retain its result connection until all Cloud writes finish.
+        server.timeout(req, 0);
+      }
+
+      return dispatchWithLifecycleAdmission(req, admission, async () => {
+        const ui = await handleUiRequest(req, launcher, store, opts.remote, {
+          appConfig: opts.appConfig,
+          paths: opts.paths,
+          defaultCloudUrl: opts.defaultCloudUrl,
+          cloudAuth: opts.cloudAuth,
+          cloudConnection: opts.cloudConnection,
+          pendingSync: opts.pendingSync,
+          cloudBrowser: opts.cloudBrowser,
+          mcpTunnel: opts.mcpTunnel,
+          health: opts.health,
+          scripts,
+          runtimeMode,
+          localOnly: true,
+        });
+        if (ui) return ui;
+        const cloudError = cloudAutomationError(req, opts);
+        if (cloudError) return cloudError;
+        // Per-profile identity "card" (AdsPower-style landing page). Opened as a tab and
+        // pointed to by the bookmark, so an operator can always see which account a window is.
+        if (reqUrl.pathname === "/card") return renderProfileCard(store, reqUrl.searchParams.get("id") ?? "");
+        const denied = authorizeLocalApiRequest(req, localApiToken);
+        if (denied) return denied;
+        return handleAutomationRequest(req, opts, lifecycle);
+      });
+    },
+  });
+  void agentHub?.cleanupTemporaryProfiles();
+  log(`控制台和 API 已启动：http://${hostname}:${server.port}（界面：/，IDFRI Local API：/api；兼容 AdsPower）`);
+  if (!agentNonce) log(`Local API token: ${localApiToken}`);
+  return Object.assign(server, {
+    localApiToken,
+    stopScripts: () => scripts?.runner.shutdown() ?? Promise.resolve(),
+  });
+}
