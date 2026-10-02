@@ -1,7 +1,7 @@
 [package]
 name = "idfri-desktop"
 version = "0.1.0-beta.50"
-description = "IDFRI Windows desktop shell"
+description = "IDFRI desktop shell"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"

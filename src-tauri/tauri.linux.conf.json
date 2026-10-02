@@ -1,0 +1,22 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["deb", "appimage"],
+    "icon": ["icons/icon.png"],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-2",
+          "libsecret-tools",
+          "python3"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
+  }
+}

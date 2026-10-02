@@ -305,6 +305,11 @@ pub async fn check_for_updates(
     app: AppHandle,
     coordinator: tauri::State<'_, UpdateCoordinator>,
 ) -> Result<UpdateStatus, String> {
+    if !cfg!(target_os = "windows") {
+        return Ok(UpdateStatus::UpToDate {
+            current_version: env!("CARGO_PKG_VERSION").to_owned(),
+        });
+    }
     let _guard = coordinator
         .0
         .try_lock()

@@ -6,8 +6,19 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[cfg(windows)]
 const OPEN_CHROMIUM_RUNTIME_VERSION: &str = "idfri-browser@153.0.8010.52-idfri.2";
+#[cfg(target_os = "linux")]
+const OPEN_CHROMIUM_RUNTIME_VERSION: &str = "ungoogled-chromium@153.0.8010.52-1";
 const FIREFOX_VERSION: &str = "152.0.4-beta.30";
+
+fn expected_firefox_executable() -> &'static str {
+    if cfg!(windows) {
+        "aliasmode.exe"
+    } else {
+        "aliasmode"
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,7 +136,7 @@ pub fn verify_firefox_resource(resource_dir: &Path) -> Result<FirefoxRuntime, St
     if metadata.firefox.version != FIREFOX_VERSION
         || Path::new(&metadata.firefox.executable)
             .file_name()
-            .is_none_or(|name| name != "aliasmode.exe")
+            .is_none_or(|name| name != expected_firefox_executable())
         || !is_sha256(&metadata.firefox.sha256)
         || !is_sha256(&metadata.firefox.archive_sha256)
     {

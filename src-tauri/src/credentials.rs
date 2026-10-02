@@ -214,19 +214,99 @@ fn delete_secret(key: CredentialKey) -> Result<(), String> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn secret_tool_command(action: &str, key: CredentialKey) -> std::process::Command {
+    let mut command = std::process::Command::new("secret-tool");
+    command.arg(action);
+    if action == "store" {
+        command.arg("--label=IDFRI 安全凭据");
+    }
+    command.args(["application", "IDFRI", "target", key.target()]);
+    command
+}
+
+#[cfg(target_os = "linux")]
+fn read_secret(key: CredentialKey) -> Result<Option<String>, String> {
+    let output = secret_tool_command("lookup", key)
+        .output()
+        .map_err(|_| "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned())?;
+    if !output.status.success() {
+        if output.stdout.is_empty() && output.stderr.is_empty() {
+            return Ok(None);
+        }
+        return Err("Linux Secret Service 无法读取 IDFRI 凭据".to_owned());
+    }
+    let mut bytes = output.stdout;
+    if bytes.last() == Some(&b'\n') {
+        bytes.pop();
+        if bytes.last() == Some(&b'\r') {
+            bytes.pop();
+        }
+    }
+    match String::from_utf8(bytes) {
+        Ok(secret) => Ok(Some(secret)),
+        Err(error) => {
+            let mut bytes = error.into_bytes();
+            bytes.zeroize();
+            Err("Linux Secret Service 返回了无效的 IDFRI 凭据".to_owned())
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn write_secret(key: CredentialKey, bytes: &[u8]) -> Result<(), String> {
+    use std::{io::Write, process::Stdio};
+
+    let mut child = secret_tool_command("store", key);
+    child
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut child = child
+        .spawn()
+        .map_err(|_| "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned())?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "Linux Secret Service 输入通道不可用".to_owned())?
+        .write_all(bytes)
+        .map_err(|_| "Linux Secret Service 无法写入 IDFRI 凭据".to_owned())?;
+    if child
+        .wait()
+        .map_err(|_| "Linux Secret Service 无法确认 IDFRI 凭据".to_owned())?
+        .success()
+    {
+        Ok(())
+    } else {
+        Err("Linux Secret Service 无法保存 IDFRI 凭据".to_owned())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn delete_secret(key: CredentialKey) -> Result<(), String> {
+    let output = secret_tool_command("clear", key)
+        .output()
+        .map_err(|_| "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned())?;
+    if output.status.success() || (output.stdout.is_empty() && output.stderr.is_empty()) {
+        Ok(())
+    } else {
+        Err("Linux Secret Service 无法删除 IDFRI 凭据".to_owned())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn read_secret(_key: CredentialKey) -> Result<Option<String>, String> {
-    Ok(None)
+    Err("此平台没有可用的系统凭据存储".to_owned())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn write_secret(_key: CredentialKey, _bytes: &[u8]) -> Result<(), String> {
-    Err("Windows Credential Manager is unavailable on this platform".to_owned())
+    Err("此平台没有可用的系统凭据存储".to_owned())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn delete_secret(_key: CredentialKey) -> Result<(), String> {
-    Err("Windows Credential Manager is unavailable on this platform".to_owned())
+    Err("此平台没有可用的系统凭据存储".to_owned())
 }
 
 #[cfg(test)]

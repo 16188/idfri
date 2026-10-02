@@ -475,11 +475,11 @@ export function sanitizeEnvironment(env = process.env) {
 
 async function main() {
   sanitizeEnvironment();
-  const desktopExecutable = join(
+  const desktopExecutable = process.env.ALIASMODE_DESKTOP_EXE || join(
     dirname(fileURLToPath(import.meta.url)),
     "..",
     "..",
-    "IDFRI.exe",
+    process.platform === "win32" ? "IDFRI.exe" : "idfri",
   );
   const host = await createAliasModeMcp({ runtime: { desktopExecutable } });
   let shuttingDown = false;

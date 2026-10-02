@@ -14,7 +14,9 @@
     "docs:public": "bun scripts/generate-public-docs.mjs",
     "docs:public:check": "bun scripts/generate-public-docs.mjs --check",
     "desktop:prepare": "bun scripts/prepare-windows-bundle.ts",
+    "desktop:prepare:linux": "bun scripts/prepare-linux-bundle.ts && python3 -m pip install --disable-pip-version-check --no-compile --target src-tauri/resources/playwright/python/site-packages playwright==1.58.0",
     "desktop:build:nsis": "bun run desktop:prepare && tauri build --bundles nsis --no-sign",
+    "desktop:build:linux": "bun run desktop:prepare:linux && tauri build --bundles deb,appimage --no-sign",
     "desktop:check": "cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-pc-windows-msvc",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml"
   },

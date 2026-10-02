@@ -1,0 +1,105 @@
+name: Linux x64 preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: linux-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish Linux x64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libsecret-tools \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            python3-pip \
+            xz-utils
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.89
+      - run: bun install --frozen-lockfile
+      - run: bun test
+      - run: bun run typecheck
+      - name: Prepare pinned Linux runtimes
+        run: bun run desktop:prepare:linux
+      - name: Verify packaged browser runtimes
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata=src-tauri/generated/browser.json
+          chromium="$PWD/src-tauri/resources/chromium/$(jq -r .executable "$metadata")"
+          firefox="$PWD/src-tauri/resources/firefox/$(jq -r .firefox.executable "$metadata")"
+          [[ "$(sha256sum "$chromium" | cut -d' ' -f1)" == "$(jq -r .sha256 "$metadata")" ]]
+          [[ "$(sha256sum "$firefox" | cut -d' ' -f1)" == "$(jq -r .firefox.sha256 "$metadata")" ]]
+          "$chromium" --version
+          "$firefox" --version
+          src-tauri/binaries/idfri-mcp-x86_64-unknown-linux-gnu version
+      - name: Verify compiled Linux sidecar with both engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$PWD/src-tauri/generated/browser.json"
+          export IDFRI_CHROMIUM_BINARY_PATH="$PWD/src-tauri/resources/chromium/$(jq -r .executable "$metadata")"
+          export IDFRI_CHROMIUM_BINARY_SHA256="$(jq -r .sha256 "$metadata")"
+          export ALIASMODE_FIREFOX_BINARY_PATH="$PWD/src-tauri/resources/firefox/$(jq -r .firefox.executable "$metadata")"
+          export ALIASMODE_FIREFOX_BINARY_SHA256="$(jq -r .firefox.sha256 "$metadata")"
+          export ALIASMODE_PLAYWRIGHT_RUNTIME="$PWD/src-tauri/resources/playwright"
+          sidecar=src-tauri/binaries/idfri-sidecar-x86_64-unknown-linux-gnu
+          "$sidecar" __cloud-launcher-smoke --headless --no-sandbox --state-root "$RUNNER_TEMP/idfri-linux-chromium-smoke"
+          "$sidecar" __cloud-launcher-smoke --engine firefox --headless --state-root "$RUNNER_TEMP/idfri-linux-firefox-smoke"
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build AppImage and DEB
+        run: bunx tauri build --bundles deb,appimage --no-sign
+      - name: Assemble release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version src-tauri/tauri.conf.json)"
+          mkdir -p artifacts
+          appimage="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          deb="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          [[ -n "$appimage" && -n "$deb" ]]
+          cp "$appimage" "artifacts/IDFRI_${version}_linux_x86_64.AppImage"
+          cp "$deb" "artifacts/IDFRI_${version}_linux_x86_64.deb"
+          (cd artifacts && sha256sum IDFRI_* > SHA256SUMS-linux.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: idfri-linux-x64-preview
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Publish Linux preview release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version src-tauri/tauri.conf.json)"
+          tag="preview-${version}-linux-x64-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" artifacts/* \
+            --target "$GITHUB_SHA" \
+            --title "IDFRI ${version} Linux x64 预览版" \
+            --prerelease \
+            --notes $'## Highlights\n- 新增 IDFRI Linux x64 桌面版，提供 AppImage 和 DEB。\n- 内置固定校验的 Chromium 153 与 AliasMode Firefox 152。\n- Linux 敏感凭据通过 Secret Service 保存；AppImage 用户需安装 libsecret-tools。'

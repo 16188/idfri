@@ -256,7 +256,7 @@ function packageDirectory(root: string, name: string): string {
   return join(root, "node_modules", ...name.split("/"));
 }
 
-function copyRuntimePackage(
+export function copyRuntimePackage(
   cwd: string,
   destinationRoot: string,
   name: string,

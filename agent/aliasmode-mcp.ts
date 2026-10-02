@@ -37,7 +37,7 @@ function runtimeRoot(): string {
 }
 
 function desktopExecutable(): string {
-  return process.env.ALIASMODE_DESKTOP_EXE || join(dirname(process.execPath), "IDFRI.exe");
+  return process.env.ALIASMODE_DESKTOP_EXE || join(dirname(process.execPath), process.platform === "win32" ? "IDFRI.exe" : "idfri");
 }
 
 function nodeExecutable(root: string): string {

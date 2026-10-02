@@ -3,6 +3,12 @@ use std::{env, fs, path::PathBuf};
 fn main() {
     tauri_build::build();
 
+    let target = env::var("TARGET").expect("build target");
+    let windows = target.contains("windows");
+    assert!(
+        windows || target == "x86_64-unknown-linux-gnu",
+        "IDFRI desktop supports Windows x64 and Linux x64"
+    );
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest directory"));
     let source = manifest.join("generated/browser.json");
     println!("cargo:rerun-if-changed={}", source.display());
@@ -22,8 +28,17 @@ fn main() {
     }
     assert_eq!(
         parsed.get("executable").and_then(|value| value.as_str()),
-        Some("chrome.exe"),
-        "browser metadata must target Windows chrome.exe"
+        Some(if windows { "chrome.exe" } else { "chrome" }),
+        "browser metadata executable does not match the build target"
+    );
+    assert_eq!(
+        parsed.get("runtimeVersion").and_then(|value| value.as_str()),
+        Some(if windows {
+            "idfri-browser@153.0.8010.52-idfri.2"
+        } else {
+            "ungoogled-chromium@153.0.8010.52-1"
+        }),
+        "browser metadata runtime does not match the build target"
     );
     let sha256 = parsed
         .get("sha256")
@@ -65,7 +80,8 @@ fn main() {
             && firefox_executable
                 .split(['/', '\\'])
                 .all(|component| !component.is_empty() && component != "." && component != "..")
-            && firefox_executable.split(['/', '\\']).next_back() == Some("aliasmode.exe"),
+            && firefox_executable.split(['/', '\\']).next_back()
+                == Some(if windows { "aliasmode.exe" } else { "aliasmode" }),
         "Firefox metadata executable path is unsafe"
     );
     for key in ["sha256", "archiveSha256"] {

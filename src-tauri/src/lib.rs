@@ -26,7 +26,10 @@ use tauri::{
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_shell::ShellExt;
 
+#[cfg(windows)]
 const IMPORT_RESTRICTION: &str = "Windows DPAPI 会保护已保存的浏览器敏感数据，因此导入只适用于同一台 Windows 电脑和同一账户。身份字段会被保留，但运行环境或浏览器差异仍可能改变网站可见的指纹。";
+#[cfg(target_os = "linux")]
+const IMPORT_RESTRICTION: &str = "Linux Secret Service 会保护已保存的浏览器敏感数据，因此导入只适用于同一账户。身份字段会被保留，但运行环境或浏览器差异仍可能改变网站可见的指纹。";
 
 const ALLOWED_EXTERNAL_URLS: [&str; 2] =
     ["https://github.com/16188/idfri", "https://xreacher.com/"];
@@ -399,7 +402,9 @@ pub fn run() {
                 .join("node_modules")
                 .join("playwright-core")
                 .join("package.json");
-            let node_executable = playwright_runtime.join("node").join("node.exe");
+            let node_executable = playwright_runtime
+                .join("node")
+                .join(if cfg!(windows) { "node.exe" } else { "node" });
             let worker_script = playwright_runtime.join("worker.mjs");
             let firefox_worker_script = playwright_runtime.join("firefox-worker.mjs");
             let playwright_worker_script = playwright_runtime.join("playwright-worker.mjs");
@@ -432,7 +437,11 @@ pub fn run() {
                 let helper = std::env::current_exe()?
                     .parent()
                     .ok_or_else(|| boxed("IDFRI installation directory is unavailable"))?
-                    .join("idfri-mcp.exe");
+                    .join(if cfg!(windows) {
+                        "idfri-mcp.exe"
+                    } else {
+                        "idfri-mcp"
+                    });
                 if !helper.is_file() {
                     return Err(boxed("installed IDFRI agent helper is unavailable"));
                 }
