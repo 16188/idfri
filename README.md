@@ -25,9 +25,8 @@ Windows x64 安装包会发布在本仓库的 [GitHub Releases](https://github.c
 - `IDFRI_<版本>_x64-setup.exe`：应用内更新包
 - `SHA256SUMS.txt`：发布文件校验值
 
-Linux x64 预览版同时提供：
+Linux x64 预览版提供：
 
-- `IDFRI_<版本>_linux_x86_64.AppImage`：免安装便携版；系统需提供 `libsecret-tools`
 - `IDFRI_<版本>_linux_x86_64.deb`：Ubuntu/Debian 安装包，自动声明桌面运行依赖
 - `SHA256SUMS-linux.txt`：Linux 发布文件校验值
 
@@ -99,7 +98,7 @@ bun run desktop:build:nsis
 
 私钥和 PFX 证书不得提交到仓库。CI 先生成并验收候选安装包，再对 EXE 做 Authenticode 时间戳签名、生成 Tauri 更新签名，最后发布 GitHub Release。
 
-## 构建 Linux AppImage/DEB
+## 构建 Linux DEB
 
 在 Ubuntu 24.04 安装 Tauri、WebKitGTK、`libsecret-tools` 与 Rust 1.89 所需依赖后运行：
 
@@ -107,7 +106,7 @@ bun run desktop:build:nsis
 bun run desktop:build:linux
 ```
 
-仓库的 `Linux x64 preview` 工作流会固定并校验两个浏览器运行时，完成 Chromium/Firefox 启动验收，再发布 AppImage、DEB 与 SHA-256 校验文件。Linux 预览版暂不启用应用内自动更新。
+仓库的 `Linux x64 preview` 工作流会固定并校验两个浏览器运行时，完成 Chromium/Firefox 启动验收，再发布 DEB 与 SHA-256 校验文件。Linux 预览版暂不启用应用内自动更新。
 
 ## 许可证
 

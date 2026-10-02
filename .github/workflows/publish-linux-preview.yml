@@ -69,18 +69,16 @@ jobs:
           "$sidecar" __cloud-launcher-smoke --headless --no-sandbox --state-root "$RUNNER_TEMP/idfri-linux-chromium-smoke"
           "$sidecar" __cloud-launcher-smoke --engine firefox --headless --state-root "$RUNNER_TEMP/idfri-linux-firefox-smoke"
       - run: cargo test --manifest-path src-tauri/Cargo.toml
-      - name: Build AppImage and DEB
-        run: bunx tauri build --bundles deb,appimage --no-sign
+      - name: Build DEB
+        run: bunx tauri build --bundles deb --no-sign
       - name: Assemble release assets
         shell: bash
         run: |
           set -euo pipefail
           version="$(jq -r .version src-tauri/tauri.conf.json)"
           mkdir -p artifacts
-          appimage="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
           deb="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
-          [[ -n "$appimage" && -n "$deb" ]]
-          cp "$appimage" "artifacts/IDFRI_${version}_linux_x86_64.AppImage"
+          [[ -n "$deb" ]]
           cp "$deb" "artifacts/IDFRI_${version}_linux_x86_64.deb"
           (cd artifacts && sha256sum IDFRI_* > SHA256SUMS-linux.txt)
       - uses: actions/upload-artifact@v4
@@ -102,4 +100,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "IDFRI ${version} Linux x64 预览版" \
             --prerelease \
-            --notes $'## Highlights\n- 新增 IDFRI Linux x64 桌面版，提供 AppImage 和 DEB。\n- 内置固定校验的 Chromium 153 与 AliasMode Firefox 152。\n- Linux 敏感凭据通过 Secret Service 保存；AppImage 用户需安装 libsecret-tools。'
+            --notes $'## Highlights\n- 新增 IDFRI Ubuntu/Debian x64 桌面版。\n- 内置固定校验的 Chromium 153 与 AliasMode Firefox 152。\n- Linux 敏感凭据通过 Secret Service 保存。'

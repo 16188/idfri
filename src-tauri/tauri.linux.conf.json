@@ -1,7 +1,7 @@
 {
   "bundle": {
     "createUpdaterArtifacts": false,
-    "targets": ["deb", "appimage"],
+    "targets": ["deb"],
     "icon": ["icons/icon.png"],
     "linux": {
       "deb": {
@@ -13,9 +13,6 @@
           "libsecret-tools",
           "python3"
         ]
-      },
-      "appimage": {
-        "bundleMediaFramework": false
       }
     }
   }
