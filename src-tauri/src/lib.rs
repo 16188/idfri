@@ -402,9 +402,11 @@ pub fn run() {
                 .join("node_modules")
                 .join("playwright-core")
                 .join("package.json");
-            let node_executable = playwright_runtime
-                .join("node")
-                .join(if cfg!(windows) { "node.exe" } else { "node" });
+            let node_executable = playwright_runtime.join("node").join(if cfg!(windows) {
+                "node.exe"
+            } else {
+                "node"
+            });
             let worker_script = playwright_runtime.join("worker.mjs");
             let firefox_worker_script = playwright_runtime.join("firefox-worker.mjs");
             let playwright_worker_script = playwright_runtime.join("playwright-worker.mjs");

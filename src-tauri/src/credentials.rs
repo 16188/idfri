@@ -227,9 +227,9 @@ fn secret_tool_command(action: &str, key: CredentialKey) -> std::process::Comman
 
 #[cfg(target_os = "linux")]
 fn read_secret(key: CredentialKey) -> Result<Option<String>, String> {
-    let output = secret_tool_command("lookup", key)
-        .output()
-        .map_err(|_| "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned())?;
+    let output = secret_tool_command("lookup", key).output().map_err(|_| {
+        "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned()
+    })?;
     if !output.status.success() {
         if output.stdout.is_empty() && output.stderr.is_empty() {
             return Ok(None);
@@ -262,9 +262,9 @@ fn write_secret(key: CredentialKey, bytes: &[u8]) -> Result<(), String> {
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let mut child = child
-        .spawn()
-        .map_err(|_| "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned())?;
+    let mut child = child.spawn().map_err(|_| {
+        "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned()
+    })?;
     child
         .stdin
         .take()
@@ -284,9 +284,9 @@ fn write_secret(key: CredentialKey, bytes: &[u8]) -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 fn delete_secret(key: CredentialKey) -> Result<(), String> {
-    let output = secret_tool_command("clear", key)
-        .output()
-        .map_err(|_| "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned())?;
+    let output = secret_tool_command("clear", key).output().map_err(|_| {
+        "Linux Secret Service 不可用；请安装 libsecret-tools 并解锁系统密钥环".to_owned()
+    })?;
     if output.status.success() || (output.stdout.is_empty() && output.stderr.is_empty()) {
         Ok(())
     } else {

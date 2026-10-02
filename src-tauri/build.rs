@@ -32,7 +32,9 @@ fn main() {
         "browser metadata executable does not match the build target"
     );
     assert_eq!(
-        parsed.get("runtimeVersion").and_then(|value| value.as_str()),
+        parsed
+            .get("runtimeVersion")
+            .and_then(|value| value.as_str()),
         Some(if windows {
             "idfri-browser@153.0.8010.52-idfri.2"
         } else {
@@ -81,7 +83,11 @@ fn main() {
                 .split(['/', '\\'])
                 .all(|component| !component.is_empty() && component != "." && component != "..")
             && firefox_executable.split(['/', '\\']).next_back()
-                == Some(if windows { "aliasmode.exe" } else { "aliasmode" }),
+                == Some(if windows {
+                    "aliasmode.exe"
+                } else {
+                    "aliasmode"
+                }),
         "Firefox metadata executable path is unsafe"
     );
     for key in ["sha256", "archiveSha256"] {
