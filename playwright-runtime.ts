@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -101,10 +102,13 @@ export function resolvePlaywrightRuntime(
   const env = options.env ?? process.env;
   const packagedRoot = options.runtimeRoot?.trim() || env.ALIASMODE_PLAYWRIGHT_RUNTIME?.trim();
   if (packagedRoot) {
+    const linuxNode = join(packagedRoot, "node", "node");
     return {
       kind: "packaged",
       root: packagedRoot,
-      nodeExecutable: join(packagedRoot, "node", process.platform === "win32" ? "node.exe" : "node"),
+      nodeExecutable: process.platform !== "win32" && existsSync(linuxNode)
+        ? linuxNode
+        : join(packagedRoot, "node", "node.exe"),
       workerPath: join(packagedRoot, "worker.mjs"),
     };
   }
