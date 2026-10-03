@@ -44,7 +44,7 @@ async function launchAndProbe(binary: string, output: string, profile: Profile, 
   mkdirSync(userData, { recursive: true });
   const args = [
     `--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1", `--user-data-dir=${userData}`,
-    "--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage",
+    "--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--enable-unsafe-swiftshader",
     ...deriveChromiumFingerprintArgs(profile),
   ];
   const child = Bun.spawn([binary, ...args], { stdin: "pipe", stdout: "ignore", stderr: "pipe" });
@@ -61,7 +61,7 @@ async function launchAndProbe(binary: string, output: string, profile: Profile, 
     const context = browser.contexts()[0];
     if (!context) throw new Error(`${label}: 浏览器上下文不可用`);
     const probePage = await context.newPage();
-    await probePage.setContent("<!doctype html><title>IDFRI fingerprint regression</title>");
+    await probePage.goto("https://example.com/", { waitUntil: "domcontentloaded", timeout: 45_000 });
     const fingerprint = await probePage.evaluate(fingerprintProbe);
     await probePage.close();
     const sites: SiteResult[] = [];
