@@ -428,27 +428,42 @@ function Disconnect-McpHost([Diagnostics.Process]$Process) {
   return $null
 }
 
-function Get-ProcessTreeIds([int]$RootId) {
+function Get-ProcessTree([int]$RootId) {
+  $root = Get-CimInstance Win32_Process -Filter "ProcessId = $RootId" -ErrorAction SilentlyContinue
+  if (-not $root) { return @() }
   $ids = [Collections.Generic.HashSet[int]]::new()
-  $pending = [Collections.Generic.Queue[int]]::new()
+  $processes = [Collections.Generic.List[object]]::new()
+  $pending = [Collections.Generic.Queue[object]]::new()
   [void]$ids.Add($RootId)
-  $pending.Enqueue($RootId)
+  [void]$processes.Add($root)
+  $pending.Enqueue($root)
   while ($pending.Count -gt 0) {
-    $parentId = $pending.Dequeue()
+    $parent = $pending.Dequeue()
+    $parentId = [int]$parent.ProcessId
     foreach ($child in @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentId" -ErrorAction SilentlyContinue)) {
-      if ($ids.Add([int]$child.ProcessId)) { $pending.Enqueue([int]$child.ProcessId) }
+      if ($child.CreationDate -lt $parent.CreationDate) { continue }
+      if ($ids.Add([int]$child.ProcessId)) {
+        [void]$processes.Add($child)
+        $pending.Enqueue($child)
+      }
     }
   }
-  return @($ids)
+  return @($processes)
 }
 
-function Assert-ProcessIdsExited([int[]]$Ids, [string]$Description) {
+function Assert-ProcessesExited([object[]]$Processes, [string]$Description) {
+  $remaining = @()
   for ($attempt = 0; $attempt -lt 60; $attempt++) {
-    $remaining = @($Ids | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    $remaining = @($Processes | Where-Object {
+      $expected = $_
+      $id = [int]$expected.ProcessId
+      $current = Get-CimInstance Win32_Process -Filter "ProcessId = $id" -ErrorAction SilentlyContinue
+      $current -and $current.CreationDate -eq $expected.CreationDate
+    })
     if ($remaining.Count -eq 0) { return }
     Start-Sleep -Milliseconds 250
   }
-  throw "$Description processes survived: $($Ids -join ', ')"
+  throw "$Description processes survived: $(($remaining.ProcessId) -join ', ')"
 }
 
 function Invoke-CustomScriptRunner(
@@ -483,7 +498,7 @@ function Invoke-CustomScriptRunner(
     if (-not $readiness.Wait(60000) -or $readiness.Result -ne $Ready) {
       throw "installed $Mode custom script runner did not report readiness"
     }
-    $tree = Get-ProcessTreeIds $process.Id
+    $tree = Get-ProcessTree $process.Id
     if ($Mode -eq "stop") {
       Stop-ProcessTree $process
     } else {
@@ -498,7 +513,7 @@ function Invoke-CustomScriptRunner(
       $diagnostic = $stderr.GetAwaiter().GetResult()
       if ($diagnostic) { Write-Host "custom script runner stderr: $diagnostic" }
     }
-    Assert-ProcessIdsExited $tree "installed $Mode custom script runner"
+    Assert-ProcessesExited $tree "installed $Mode custom script runner"
   } finally {
     if (-not (Test-ProcessExited $process)) { Stop-ProcessTree $process }
     $process.Dispose()

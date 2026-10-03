@@ -5,6 +5,7 @@ import { deriveIdfriFingerprintConfig } from "../fingerprint.ts";
 
 test("fingerprint regression compares stable fields and configured identity", () => {
   const profile = buildNewProfile({ name: "regression", screen: "1920x1080" }, () => false);
+  profile.platformOs = "windows";
   const expected = deriveIdfriFingerprintConfig(profile);
   const sample = {
     userAgent: expected.navigator.userAgent, uaDataPlatform: expected.clientHints.platform,

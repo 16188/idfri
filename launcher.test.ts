@@ -1789,7 +1789,7 @@ test("buildArgs never forwards startup URLs to chromium argv", () => {
   expect(args).toContain("--no-default-browser-check");
   expect(args).toContain("--fingerprint-brand-version=153.0.8010.52");
   expect(args).toContain("--fingerprint-tls-profile=chrome-153");
-  expect(args).toContain("--idfri-fp-stdin");
+  expect(args).toContain(process.platform === "win32" ? "--idfri-fp-stdin" : "--fury-fp-fd=0");
   expect(args.some((arg) => arg.includes("schema_version"))).toBe(false);
   expect(args).not.toContain("https://x.com/home");
   store.close();
