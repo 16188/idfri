@@ -22,6 +22,7 @@ import {
   fetchPublishedScripts,
   fetchScriptLibraryInfo,
   fetchScripts,
+  createVisualScript,
   importPublishedScript,
   openProfile,
   publishScript,
@@ -506,13 +507,17 @@ test("scripts require the desktop capability and send it on every request", asyn
   try {
     expect(scriptsDesktopAvailable()).toBe(true);
     await fetchScripts();
+    await createVisualScript({ name: "流程", description: "", steps: [{ type: "goto", url: "https://example.com" }] });
     await startScriptRun({ scriptId: "script-1", profileIds: ["profile-1"], inputs: {}, useCredentials: false });
-    expect(calls).toEqual(["script_capability", "script_capability"]);
-    expect(requests.map((request) => request.path)).toEqual(["/ui/api/scripts", "/ui/api/scripts/run"]);
+    expect(calls).toEqual(["script_capability", "script_capability", "script_capability"]);
+    expect(requests.map((request) => request.path)).toEqual(["/ui/api/scripts", "/ui/api/scripts/visual", "/ui/api/scripts/run"]);
     expect(requests.map((request) => new Headers(request.init?.headers).get("Authorization"))).toEqual([
-      "Bearer test-capability", "Bearer test-capability",
+      "Bearer test-capability", "Bearer test-capability", "Bearer test-capability",
     ]);
     expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({
+      name: "流程", description: "", steps: [{ type: "goto", url: "https://example.com" }],
+    });
+    expect(JSON.parse(String(requests[2]?.init?.body))).toEqual({
       scriptId: "script-1", profileIds: ["profile-1"], inputs: {}, useCredentials: false,
     });
   } finally {

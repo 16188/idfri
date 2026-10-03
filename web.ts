@@ -28,6 +28,7 @@ import {
 } from "./server.ts";
 import { handleUiRequest, type UiHealthMetadata } from "./ui.ts";
 import { ScriptLibrary, ScriptSupervisor } from "./scripts.ts";
+import { WindowSynchronizer } from "./synchronizer.ts";
 import {
   authorizeLocalApiRequest,
   createLocalApiToken,
@@ -164,7 +165,10 @@ function automationHealthResponse(
 function isCloudProfileRoute(req: Request): boolean {
   const pathname = new URL(req.url).pathname;
   return (req.method === "GET" && (pathname === "/api/v1/group/list" || pathname === "/api/v1/user/list")) ||
-    (req.method === "POST" && (pathname === "/api/v1/group/create" || pathname === "/api/v1/user/create"));
+    (req.method === "POST" && (
+      pathname === "/api/v1/group/create" || pathname === "/api/v1/user/create" ||
+      pathname === "/api/v2/category/list" || /^\/api\/v2\/browser-profile\/(create|list)$/.test(pathname)
+    ));
 }
 
 async function handleAutomationRequest(
@@ -325,6 +329,7 @@ export function serveDashboard(opts: DashboardServerOptions) {
       remote: opts.remote, cloudBrowser: opts.cloudBrowser, cloudConnection: opts.cloudConnection, log,
     }),
   } : undefined;
+  const synchronizer = agentNonce ? { manager: new WindowSynchronizer({ launcher, store }), nonce: agentNonce } : undefined;
   const server = Bun.serve<AgentSocketData>({
     port,
     hostname,
@@ -349,7 +354,7 @@ export function serveDashboard(opts: DashboardServerOptions) {
     },
     fetch: async (req, server) => {
       const reqUrl = new URL(req.url);
-      if ((reqUrl.pathname === "/ui/api/scripts" || reqUrl.pathname.startsWith("/ui/api/scripts/"))
+      if ((reqUrl.pathname === "/ui/api/scripts" || reqUrl.pathname.startsWith("/ui/api/scripts/") || reqUrl.pathname.startsWith("/ui/api/synchronizer"))
         && !isLoopbackAddress(server.requestIP(req)?.address)) {
         return Response.json({ ok: false, error: "loopback access only" }, { status: 403 });
       }
@@ -397,6 +402,7 @@ export function serveDashboard(opts: DashboardServerOptions) {
           mcpTunnel: opts.mcpTunnel,
           health: opts.health,
           scripts,
+          synchronizer,
           runtimeMode,
           localOnly: true,
         });
@@ -417,6 +423,9 @@ export function serveDashboard(opts: DashboardServerOptions) {
   if (!agentNonce) log(`Local API token: ${localApiToken}`);
   return Object.assign(server, {
     localApiToken,
-    stopScripts: () => scripts?.runner.shutdown() ?? Promise.resolve(),
+    stopScripts: async () => {
+      await synchronizer?.manager.stop();
+      await scripts?.runner.shutdown();
+    },
   });
 }

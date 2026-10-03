@@ -214,6 +214,12 @@ test("a thrown handler releases its permit without leaks", async () => {
 test("route classification covers AdsPower and dashboard lifecycle paths only", async () => {
   expect(await classifyLifecycleRequest(new Request("http://x/api/v1/browser/start?user_id=p1"))).toMatchObject({ kind: "start", profileIds: ["p1"] });
   expect(await classifyLifecycleRequest(new Request("http://x/api/v1/browser/stop?user_id=p1"))).toMatchObject({ kind: "stop" });
+  expect(await classifyLifecycleRequest(new Request("http://x/api/v2/browser-profile/start", {
+    method: "POST", body: JSON.stringify({ profile_id: "p1" }),
+  }))).toMatchObject({ kind: "start", profileIds: ["p1"] });
+  expect(await classifyLifecycleRequest(new Request("http://x/api/v2/browser-profile/stop", {
+    method: "POST", body: JSON.stringify({ profile_id: "p1" }),
+  }))).toMatchObject({ kind: "stop", profileIds: ["p1"] });
   expect(await classifyLifecycleRequest(new Request("http://x/ui/api/profiles/p1/open", { method: "POST" }))).toMatchObject({ kind: "start" });
   expect(await classifyLifecycleRequest(new Request("http://x/ui/api/profiles/p1/close", { method: "POST" }))).toMatchObject({ kind: "stop" });
   expect(await classifyLifecycleRequest(new Request("http://x/ui/api/profiles/p1/clear-cache", { method: "POST" }))).toMatchObject({ kind: "cleanup" });

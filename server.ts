@@ -117,6 +117,16 @@ function parseLaunchArgs(raw: string | null): string[] {
   }
 }
 
+async function v2Body(req: Request): Promise<Record<string, unknown> | null> {
+  if (req.method !== "POST") return null;
+  const value = await req.clone().json().catch(() => null);
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function v2LaunchArgs(body: Record<string, unknown> | null): string[] {
+  return Array.isArray(body?.launch_args) ? body.launch_args.map(String) : [];
+}
+
 function exactKeys(value: Record<string, unknown>, expected: string[]): boolean {
   const keys = Object.keys(value).sort();
   const sortedExpected = [...expected].sort();
@@ -196,7 +206,12 @@ export async function handleRequest(
 ): Promise<Response> {
   const url = new URL(req.url);
   const { pathname, searchParams } = url;
-  const userId = searchParams.get("user_id") ?? "";
+  const controlV2 = pathname.match(/^\/api\/v2\/browser-profile\/(start|stop|active)$/);
+  const controlBody = controlV2 ? await v2Body(req) : null;
+  if (controlV2 && !controlBody) return fail("POST JSON body required");
+  const userId = controlV2
+    ? (typeof controlBody?.profile_id === "string" ? controlBody.profile_id : "")
+    : searchParams.get("user_id") ?? "";
 
   if (pathname === "/api/xactions/health-snapshot") {
     if (!lifecycle?.remote) {
@@ -213,11 +228,11 @@ export async function handleRequest(
       : ok();
   }
 
-  if (pathname === "/api/v1/browser/start") {
-    if (!userId) return fail("missing user_id");
+  if (pathname === "/api/v1/browser/start" || controlV2?.[1] === "start") {
+    if (!userId) return fail(controlV2 ? "missing profile_id" : "missing user_id");
     if (!store.getProfile(userId)) return fail(`no such profile: ${userId}`);
     try {
-      const launchArgs = parseLaunchArgs(searchParams.get("launch_args"));
+      const launchArgs = controlV2 ? v2LaunchArgs(controlBody) : parseLaunchArgs(searchParams.get("launch_args"));
       const { ws, port } = await launcher.start(userId, launchArgs);
       if (isFirefoxEngine(store.getLaunch(userId)) || ws.startsWith("firefox://")) return ok(firefoxPublicFields());
       return ok({
@@ -230,8 +245,8 @@ export async function handleRequest(
     }
   }
 
-  if (pathname === "/api/v1/browser/stop") {
-    if (!userId) return fail("missing user_id");
+  if (pathname === "/api/v1/browser/stop" || controlV2?.[1] === "stop") {
+    if (!userId) return fail(controlV2 ? "missing profile_id" : "missing user_id");
     const launch = store.getLaunch(userId);
     if (isFirefoxEngine(launch)) {
       if (isFirefoxLaunch(launch)) await captureFirefoxSession(store, userId, launch.firefoxOwner);
@@ -246,11 +261,14 @@ export async function handleRequest(
   // context.cookies() and returns the result as JSON.
   //   GET /api/v1/browser/cookies?user_id=<id>&urls=https://x.com,https://twitter.com
   //   -> { code:0, data:{ cookies:[{name,value,domain,path,httpOnly,secure,expires,sameSite}, ...] } }
-  if (pathname === "/api/v1/browser/cookies") {
-    if (!userId) return fail("missing user_id");
-    if (!(await launcher.certifiedActive(userId))) return fail(`profile not safely running: ${userId}`);
-    const launch = store.getLaunch(userId);
-    if (!launch) return fail(`profile not running: ${userId}`);
+  if (pathname === "/api/v1/browser/cookies" || pathname === "/api/v2/browser-profile/cookies") {
+    const cookieProfileId = pathname.startsWith("/api/v2/")
+      ? searchParams.get("profile_id") ?? ""
+      : userId;
+    if (!cookieProfileId) return fail(pathname.startsWith("/api/v2/") ? "missing profile_id" : "missing user_id");
+    if (!(await launcher.certifiedActive(cookieProfileId))) return fail(`profile not safely running: ${cookieProfileId}`);
+    const launch = store.getLaunch(cookieProfileId);
+    if (!launch) return fail(`profile not running: ${cookieProfileId}`);
     const urlsParam = searchParams.get("urls");
     const urls = urlsParam
       ? urlsParam.split(",").map((u) => u.trim()).filter(Boolean)
@@ -261,14 +279,14 @@ export async function handleRequest(
           ? await callFirefoxOwner(launch.firefoxOwner, "cookie-harvest", { urls })
           : (() => { throw new Error("Firefox owner is unavailable"); })()
         : launch.ws ? await harvestCookies(launch.ws, urls) : (() => { throw new Error("profile not running"); })();
-      return ok({ cookies });
+      return ok({ cookies: pathname.startsWith("/api/v2/") ? JSON.stringify(cookies) : cookies });
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));
     }
   }
 
-  if (pathname === "/api/v1/browser/active") {
-    if (!userId) return fail("missing user_id");
+  if (pathname === "/api/v1/browser/active" || controlV2?.[1] === "active") {
+    if (!userId) return fail(controlV2 ? "missing profile_id" : "missing user_id");
     return activeResponse(userId, launcher, store, lifecycle);
   }
 
@@ -296,7 +314,8 @@ export async function handleRequest(
  * `status` and `delete-cache` are intentionally excluded (safe to pass through).
  */
 export function isAdsPowerBrowserControl(pathname: string): boolean {
-  return /^\/api\/v1\/browser\/(start|stop|active)$/.test(pathname);
+  return /^\/api\/v1\/browser\/(start|stop|active)$/.test(pathname)
+    || /^\/api\/v2\/browser-profile\/(start|stop|active)$/.test(pathname);
 }
 
 /**
@@ -313,16 +332,18 @@ export async function handleRemoteBrowserControl(
   lifecycle?: BrowserLifecycleContext,
 ): Promise<Response> {
   const { pathname, searchParams } = new URL(req.url);
-  const userId = searchParams.get("user_id") ?? "";
-  if (!userId) return fail("missing user_id");
+  const controlV2 = pathname.match(/^\/api\/v2\/browser-profile\/(start|stop|active)$/);
+  const body = controlV2 ? await v2Body(req) : null;
+  const userId = controlV2 ? (typeof body?.profile_id === "string" ? body.profile_id : "") : searchParams.get("user_id") ?? "";
+  if (!userId) return fail(controlV2 ? "missing profile_id" : "missing user_id");
 
   // A thrown error here (hub unreachable, token revoked, unknown profile —
   // coord.open() throws on a failed hub call before it can return {ok:false})
   // must NOT bubble as a 500/non-JSON: startAdsPowerProfile() parses the body
   // and code unconditionally, so it has to be a clean AdsPower {code:-1}.
   try {
-    if (pathname === "/api/v1/browser/start") {
-      const r = await coord.open(userId, parseLaunchArgs(searchParams.get("launch_args")));
+    if (pathname === "/api/v1/browser/start" || controlV2?.[1] === "start") {
+      const r = await coord.open(userId, controlV2 ? v2LaunchArgs(body) : parseLaunchArgs(searchParams.get("launch_args")));
       if (r.ok) {
         return ok({
           ws: { puppeteer: r.ws, selenium: "" },
@@ -333,7 +354,7 @@ export async function handleRemoteBrowserControl(
       }
       return fail(r.lockedBy ? `in use by ${r.lockedBy}` : (r.error ?? "open failed"));
     }
-    if (pathname === "/api/v1/browser/stop") {
+    if (pathname === "/api/v1/browser/stop" || controlV2?.[1] === "stop") {
       return (await coord.close(userId))
         ? ok()
         : fail(`browser teardown unconfirmed: ${userId}`);
@@ -356,12 +377,14 @@ export async function handleCloudBrowserControl(
   lifecycle?: BrowserLifecycleContext,
 ): Promise<Response> {
   const { pathname, searchParams } = new URL(req.url);
-  const userId = searchParams.get("user_id") ?? "";
-  if (!userId) return fail("missing user_id");
+  const controlV2 = pathname.match(/^\/api\/v2\/browser-profile\/(start|stop|active)$/);
+  const body = controlV2 ? await v2Body(req) : null;
+  const userId = controlV2 ? (typeof body?.profile_id === "string" ? body.profile_id : "") : searchParams.get("user_id") ?? "";
+  if (!userId) return fail(controlV2 ? "missing profile_id" : "missing user_id");
 
   try {
-    if (pathname === "/api/v1/browser/start") {
-      const result = await cloudBrowser.open(userId, parseLaunchArgs(searchParams.get("launch_args")));
+    if (pathname === "/api/v1/browser/start" || controlV2?.[1] === "start") {
+      const result = await cloudBrowser.open(userId, controlV2 ? v2LaunchArgs(body) : parseLaunchArgs(searchParams.get("launch_args")));
       if (!result.ok) return fail(result.error ?? "open failed");
       if (!result.ws || result.port === undefined) return fail("open returned no browser connection");
       return ok({
@@ -371,7 +394,7 @@ export async function handleCloudBrowserControl(
         ...(result.warning ? { warning: result.warning } : {}),
       });
     }
-    if (pathname === "/api/v1/browser/stop") {
+    if (pathname === "/api/v1/browser/stop" || controlV2?.[1] === "stop") {
       return (await cloudBrowser.close(userId)).closed
         ? ok()
         : fail(`browser teardown unconfirmed: ${userId}`);

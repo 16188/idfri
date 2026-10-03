@@ -366,6 +366,7 @@ export async function prepareWindowsBundle(
   cpSync(join(cwd, "playwright-worker.mjs"), join(playwrightRoot, "worker.mjs"));
   cpSync(join(cwd, "playwright-worker.mjs"), join(playwrightRoot, "playwright-worker.mjs"));
   cpSync(join(cwd, "firefox-worker.mjs"), join(playwrightRoot, "firefox-worker.mjs"));
+  cpSync(join(cwd, "synchronizer-worker.mjs"), join(playwrightRoot, "synchronizer-worker.mjs"));
 
   const agentRoot = join(playwrightRoot, "agent");
   mkdirSync(agentRoot, { recursive: true });

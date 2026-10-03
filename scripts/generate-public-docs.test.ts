@@ -32,14 +32,23 @@ const DOCUMENTED_ROUTES = [
   "get /api/v1/browser/start",
   "get /api/v1/browser/stop",
   "get /api/v1/browser/active",
+  "post /api/v2/browser-profile/start",
+  "post /api/v2/browser-profile/stop",
+  "post /api/v2/browser-profile/active",
   "post /api/v2/browser-profile/delete-cache",
   "get /api/v1/browser/cookies",
+  "get /api/v2/browser-profile/cookies",
   "get /api/v1/group/list",
   "post /api/v1/group/create",
+  "post /api/v2/category/list",
   "get /api/v1/user/list",
   "post /api/v1/user/create",
   "post /api/v1/user/delete",
   "post /api/v1/user/update",
+  "post /api/v2/browser-profile/create",
+  "post /api/v2/browser-profile/update",
+  "post /api/v2/browser-profile/list",
+  "post /api/v2/browser-profile/delete",
 ];
 
 const read = (path: string) => readFileSync(join(PUBLIC_DOCS_DIR, path), "utf8");
@@ -70,15 +79,19 @@ function documentedDataKeys(op: any): string[] {
   return Object.keys(schema(dataRef).properties ?? {});
 }
 
-test("OpenAPI document is 3.1 and lists exactly the 13 public loopback routes", () => {
+test("OpenAPI document is 3.1 and lists exactly the 22 public loopback routes", () => {
   expect(openapi.openapi.startsWith("3.1")).toBe(true);
   expect(openapi.servers[0].url).toBe("http://127.0.0.1:50400");
   const ops = operations();
   expect(ops.map((o) => `${o.method} ${o.path}`).sort()).toEqual([...DOCUMENTED_ROUTES].sort());
-  expect(new Set(ops.map((o) => o.op.operationId)).size).toBe(13);
+  expect(new Set(ops.map((o) => o.op.operationId)).size).toBe(22);
   for (const { path, op } of ops) {
     expect(path).not.toMatch(/\/ui\/api|\/api\/agent\/|\/api\/xactions\//);
-    expect(op["x-aliasmode-version-introduced"]).toBe("0.1.0-beta.42");
+    expect(op["x-aliasmode-version-introduced"]).toBe(
+      path.startsWith("/api/v2/") && path !== "/api/v2/browser-profile/delete-cache"
+        ? "0.1.0-beta.50"
+        : "0.1.0-beta.42",
+    );
   }
 });
 
@@ -133,12 +146,22 @@ test("every documented operation is recognised by the real handlers with the doc
   expect((await call("browserStart", get(`/api/v1/browser/start?user_id=${id}&launch_args=${launchArgs}`))).data.debug_port).toBe("9222");
   expect((await call("browserActive", get(`/api/v1/browser/active?user_id=${id}`))).data.status).toBe("Inactive");
   expect((await call("browserStop", get(`/api/v1/browser/stop?user_id=${id}`))).code).toBe(0);
+  expect((await call("browserProfileStart", post("/api/v2/browser-profile/start", { profile_id: id, launch_args: [] }))).code).toBe(0);
+  expect((await call("browserProfileActive", post("/api/v2/browser-profile/active", { profile_id: id }))).data.status).toBe("Inactive");
+  expect((await call("browserProfileStop", post("/api/v2/browser-profile/stop", { profile_id: id }))).code).toBe(0);
   expect((await call("browserProfileDeleteCache", post("/api/v2/browser-profile/delete-cache", { profile_id: [id], type: ["image_file"] }))).code).toBe(0);
   expect((await call("browserCookies", get(`/api/v1/browser/cookies?user_id=${id}`))).msg).toBe(`profile not running: ${id}`);
+  expect((await call("browserProfileCookies", get(`/api/v2/browser-profile/cookies?profile_id=${id}`))).msg).toBe(`profile not running: ${id}`);
   expect((await call("groupList", get("/api/v1/group/list?page=1&page_size=100"))).data.list).toEqual([{ group_id: "research", group_name: "research" }]);
   expect((await call("groupCreate", post("/api/v1/group/create", { group_name: "outreach" }))).data.group_id).toBe("outreach");
+  expect((await call("categoryListV2", post("/api/v2/category/list", { page: 1, limit: 100 }))).data.list).toHaveLength(2);
   expect((await call("userList", get(`/api/v1/user/list?page=1&page_size=100&user_sort=${sort}`))).data.list[0].user_id).toBe(id);
   expect((await call("userUpdate", post("/api/v1/user/update", { user_id: id, name: "research-01-renamed", username: "example_user" }))).code).toBe(0);
+  const createdV2 = await call("browserProfileCreate", post("/api/v2/browser-profile/create", { name: "v2-profile", group_id: "research" }));
+  const idV2 = createdV2.data.profile_id as string;
+  expect((await call("browserProfileUpdate", post("/api/v2/browser-profile/update", { profile_id: idV2, username: "v2-user" }))).code).toBe(0);
+  expect((await call("browserProfileList", post("/api/v2/browser-profile/list", { profile_id: [idV2], page: 1, limit: 20 }))).data.list[0].profile_id).toBe(idV2);
+  expect((await call("browserProfileDelete", post("/api/v2/browser-profile/delete", { profile_id: [idV2] }))).data.deleted).toBe(1);
   expect((await call("userDelete", post("/api/v1/user/delete", { user_ids: [id] }))).data).toEqual({ deleted: 1, locked: [] });
 });
 
@@ -154,7 +177,7 @@ test("current-source MCP catalog is deterministic and committed", async () => {
   const second = await generateCurrentSourceCatalog();
   expect(serialize(first)).toBe(serialize(second));
   expect(read(CURRENT_CATALOG_PATH)).toBe(serialize(first));
-});
+}, 20_000);
 
 test("MCP catalogs list the expected tools", () => {
   const current = JSON.parse(read(CURRENT_CATALOG_PATH));

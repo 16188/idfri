@@ -81,6 +81,10 @@ import {
   renameGroup,
   deleteGroup,
   fetchTotp,
+  fetchWindowSynchronizer,
+  startWindowSynchronizer,
+  stopWindowSynchronizer,
+  type WindowSynchronizerStatus,
 } from "./api.ts";
 
 /** Run async tasks with bounded concurrency (so "Open 50" isn't 50 at once). */
@@ -129,6 +133,50 @@ function downloadText(name: string, text: string, type: string): void {
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
+}
+
+function WindowSyncPanel({ open, profiles, onClose }: { open: boolean; profiles: UiProfile[]; onClose: () => void }) {
+  const [leaderId, setLeaderId] = useState("");
+  const [status, setStatus] = useState<WindowSynchronizerStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setLeaderId((current) => profiles.some((profile) => profile.id === current) ? current : profiles[0]?.id ?? "");
+    void fetchWindowSynchronizer().then(setStatus).catch((nextError) => setError(nextError instanceof Error ? nextError.message : String(nextError)));
+  }, [open, profiles]);
+  useEffect(() => {
+    if (!open || (status?.state !== "running" && status?.state !== "starting")) return;
+    const timer = window.setInterval(() => { void fetchWindowSynchronizer().then(setStatus).catch(() => {}); }, 1000);
+    return () => window.clearInterval(timer);
+  }, [open, status?.state]);
+  if (!open) return null;
+  const start = async () => {
+    setBusy(true); setError(null);
+    try {
+      const ids = [leaderId, ...profiles.filter((profile) => profile.id !== leaderId).map((profile) => profile.id)];
+      setStatus(await startWindowSynchronizer(ids));
+    } catch (nextError) { setError(nextError instanceof Error ? nextError.message : String(nextError)); }
+    finally { setBusy(false); }
+  };
+  const stop = async () => {
+    setBusy(true); setError(null);
+    try { setStatus(await stopWindowSynchronizer()); }
+    catch (nextError) { setError(nextError instanceof Error ? nextError.message : String(nextError)); }
+    finally { setBusy(false); }
+  };
+  const active = status?.state === "running" || status?.state === "starting" || status?.state === "stopping";
+  return <div className="modal-backdrop" onClick={onClose}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="window-sync-title" onClick={(event) => event.stopPropagation()}>
+    <div className="modal-head" id="window-sync-title">多窗口同步器<button type="button" className="modal-close" aria-label="关闭" onClick={onClose}>×</button></div>
+    <div className="modal-body">
+      <p className="formnote">在主控窗口中的点击、非密码输入、回车、滚动和网页跳转会同步到其他窗口。密码字段不会复制。</p>
+      {error && <div className="modal-err" role="alert">{error}</div>}
+      {!active && <label className="fld"><span>主控资料</span><select className="select" value={leaderId} onChange={(event) => setLeaderId(event.target.value)}>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label>}
+      <p className="formnote">已选择 {profiles.length} 个正在运行的 Chromium 资料。</p>
+      {status && <div className="script-progress"><b>状态：{{ stopped: "已停止", starting: "正在启动", running: "同步中", stopping: "正在停止", failed: "失败" }[status.state]}</b>{status.leader && <div className="script-profile running"><span>主控：{status.leader.name}</span><span>{status.events} 个操作</span>{status.failures > 0 && <small className="warning">{status.failures} 次跟随失败</small>}</div>}</div>}
+    </div>
+    <div className="modal-foot"><button className="btn ghost" type="button" onClick={onClose}>关闭</button>{active ? <button className="btn solid-danger" type="button" disabled={busy || status?.state === "stopping"} onClick={() => void stop()}>{busy ? "正在停止…" : "停止同步"}</button> : <button className="btn primary" type="button" disabled={busy || profiles.length < 2 || !leaderId} onClick={() => void start()}>{busy ? "正在启动…" : "开始同步"}</button>}</div>
+  </div></div>;
 }
 
 const REFRESH_MS = 3000;
@@ -1063,6 +1111,7 @@ function App() {
   const [view, setView] = useState<"profiles" | "scripts" | "settings" | "extensions" | "proxies" | "trash">("profiles");
   const [scriptRunOpen, setScriptRunOpen] = useState(false);
   const [scriptRunProfiles, setScriptRunProfiles] = useState<UiProfile[]>([]);
+  const [windowSyncOpen, setWindowSyncOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("account");
   const [remoteMcp, setRemoteMcp] = useState<RemoteMcpSettings>({ state: "idle" });
@@ -2056,6 +2105,7 @@ function App() {
 
   const runningCount = profiles.filter((p) => p.running).length;
   const selectedMobileCount = profiles.filter((p) => selected.has(p.id) && p.mobilePersona).length;
+  const selectedSyncProfiles = profiles.filter((p) => selected.has(p.id) && p.running && p.engine === "chromium");
   const existingGroups = groups.slice(1); // drop the "all" pseudo-group
   const editableGroups = isCloudMode
     ? (team?.folders.filter((folder) => folder.permission === "edit" && !folder.archivedAt).map((folder) => folder.name) ??
@@ -3371,6 +3421,7 @@ function App() {
               setScriptRunOpen(true);
             }}
           ><Icon name="play" className="sm" />运行脚本</button>
+          <button className="btn" type="button" disabled={selectedSyncProfiles.length < 2} title="至少选择两个已打开的 Chromium 资料" onClick={() => setWindowSyncOpen(true)}><Icon name="activity" className="sm" />多窗口同步</button>
           <span className="vsep" />
           {!isCloudMode && selectedMobileCount > 0 && (
             <button className="btn warn" onClick={convertSelectedMobile}>
@@ -4683,6 +4734,7 @@ function App() {
         selectedProfiles={scriptRunProfiles}
         onClose={() => setScriptRunOpen(false)}
       />
+      <WindowSyncPanel open={windowSyncOpen} profiles={selectedSyncProfiles} onClose={() => setWindowSyncOpen(false)} />
     </div>
   );
 }

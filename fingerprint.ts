@@ -455,11 +455,14 @@ export function deriveIdfriFingerprintConfig(profile: Profile) {
 }
 
 /** Map the stored IDFRI persona to IDFRI Browser's native switches. */
-export function deriveChromiumFingerprintArgs(profile: Profile): string[] {
+export function deriveChromiumFingerprintArgs(
+  profile: Profile,
+  hostPlatform: NodeJS.Platform = process.platform,
+): string[] {
   const config = deriveIdfriFingerprintConfig(profile);
   return [
     `--fingerprint=${profile.fingerprintSeed}`,
-    "--idfri-fp-stdin",
+    hostPlatform === "win32" ? "--idfri-fp-stdin" : "--fury-fp-fd=0",
     `--user-agent=${config.navigator.userAgent}`,
     "--fingerprint-platform=windows",
     `--fingerprint-platform-version=${config.clientHints.platformVersion}`,

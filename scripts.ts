@@ -13,6 +13,68 @@ export class ScriptError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 
+export type VisualFlowStep =
+  | { type: "goto"; url: string }
+  | { type: "click"; selector: string }
+  | { type: "fill"; selector: string; text: string }
+  | { type: "waitFor"; selector: string }
+  | { type: "wait"; milliseconds: number }
+  | { type: "scroll"; x: number; y: number }
+  | { type: "screenshot" };
+
+/** Compile the visual editor's small, validated step set into the existing runner format. */
+export function compileVisualFlow(steps: VisualFlowStep[]): string {
+  if (!Array.isArray(steps) || !steps.length || steps.length > 100) throw new ScriptError("流程必须包含 1 到 100 个步骤");
+  const clean = steps.map((step, index) => {
+    if (!step || typeof step !== "object") throw new ScriptError(`第 ${index + 1} 步无效`);
+    const selector = "selector" in step ? String(step.selector ?? "").trim() : "";
+    if (["click", "fill", "waitFor"].includes(step.type) && (!selector || selector.length > 1000)) {
+      throw new ScriptError(`第 ${index + 1} 步需要有效的元素选择器`);
+    }
+    if (step.type === "goto") {
+      let url: URL;
+      try { url = new URL(String(step.url)); } catch { throw new ScriptError(`第 ${index + 1} 步的网址无效`); }
+      if (!["http:", "https:"].includes(url.protocol) || url.href.length > 2048) throw new ScriptError(`第 ${index + 1} 步只支持 HTTP/HTTPS 网址`);
+      return { type: step.type, url: url.href };
+    }
+    if (step.type === "click" || step.type === "waitFor") return { type: step.type, selector };
+    if (step.type === "fill") {
+      const text = String(step.text ?? "");
+      if (text.length > 10_000) throw new ScriptError(`第 ${index + 1} 步的文本过长`);
+      return { type: step.type, selector, text };
+    }
+    if (step.type === "wait") {
+      const milliseconds = Number(step.milliseconds);
+      if (!Number.isInteger(milliseconds) || milliseconds < 0 || milliseconds > 60_000) throw new ScriptError(`第 ${index + 1} 步的等待时间必须在 0 到 60000 毫秒之间`);
+      return { type: step.type, milliseconds };
+    }
+    if (step.type === "scroll") {
+      const x = Number(step.x); const y = Number(step.y);
+      if (![x, y].every((value) => Number.isFinite(value) && Math.abs(value) <= 1_000_000)) throw new ScriptError(`第 ${index + 1} 步的滚动距离无效`);
+      return { type: step.type, x, y };
+    }
+    if (step.type === "screenshot") return { type: step.type };
+    throw new ScriptError(`第 ${index + 1} 步的类型不受支持`);
+  });
+  return `const steps = ${JSON.stringify(clean)};
+export default async function ({ page, log }) {
+  for (const [index, step] of steps.entries()) {
+    if (step.type === "goto") await page.goto(step.url, { waitUntil: "domcontentloaded" });
+    else if (step.type === "click") await page.locator(step.selector).first().click();
+    else if (step.type === "fill") await page.locator(step.selector).first().fill(step.text);
+    else if (step.type === "waitFor") await page.locator(step.selector).first().waitFor({ state: "visible" });
+    else if (step.type === "wait") await page.waitForTimeout(step.milliseconds);
+    else if (step.type === "scroll") await page.evaluate(({ x, y }) => window.scrollBy(x, y), step);
+    else if (step.type === "screenshot") {
+      const path = \`idfri-screenshot-\${index + 1}.png\`;
+      await page.screenshot({ path, fullPage: true });
+      log(\`截图已保存：\${path}\`);
+    }
+  }
+}
+`;
+}
+
 export function scriptInput(value: any): ScriptInput {
   if (!value || typeof value.name !== "string" || !value.name.trim()
     || typeof value.description !== "string" || typeof value.source !== "string" || !value.source.trim()
@@ -256,7 +318,7 @@ export const executeScript: ScriptExecution = async ({ scriptPath, language, inp
     env.PYTHONPATH = join(dirname(dirname(runner)), "python", "site-packages");
   }
   const child = spawn(executable, [...(language === "python" ? ["-u", "-X", "utf8"] : []), runner, scriptPath], {
-    windowsHide: true, detached: process.platform !== "win32", env, stdio: ["pipe", logFd, logFd],
+    cwd: dirname(scriptPath), windowsHide: true, detached: process.platform !== "win32", env, stdio: ["pipe", logFd, logFd],
   });
   let termination: Promise<void> | undefined;
   const stop = () => {

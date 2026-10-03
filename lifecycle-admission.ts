@@ -221,6 +221,15 @@ export async function classifyLifecycleRequest(req: Request): Promise<Classified
   if (url.pathname === "/api/v1/browser/stop") {
     return { kind: "stop", profileIds: normalizeProfileIds(url.searchParams.get("user_id")), protocol: "adspower" };
   }
+  const v2 = url.pathname.match(/^\/api\/v2\/browser-profile\/(start|stop)$/);
+  if (v2) {
+    let profileIds: string[] = [];
+    try {
+      const body = (await req.clone().json()) as { profile_id?: unknown };
+      profileIds = normalizeProfileIds(body?.profile_id);
+    } catch {}
+    return { kind: v2[1] as "start" | "stop", profileIds, protocol: "adspower" };
+  }
   if (url.pathname === "/api/v2/browser-profile/delete-cache") {
     let profileIds: string[] = [];
     try {

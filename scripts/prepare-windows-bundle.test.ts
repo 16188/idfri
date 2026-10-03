@@ -77,6 +77,7 @@ function workspace(): string {
   writeFileSync(join(cwd, "NOTICE"), "IDFRI Browser BSD-3-Clause");
   writeFileSync(join(cwd, "playwright-worker.mjs"), "worker");
   writeFileSync(join(cwd, "firefox-worker.mjs"), "firefox worker");
+  writeFileSync(join(cwd, "synchronizer-worker.mjs"), "synchronizer worker");
   mkdirSync(join(cwd, "agent"), { recursive: true });
   for (const file of [
     "mcp-host.mjs",
@@ -174,6 +175,7 @@ test("Windows bundle preparation packages IDFRI Browser 153 and owned Firefox wi
     expect(readFileSync(join(cwd, "src-tauri", "resources", "playwright", "worker.mjs"), "utf8")).toBe("worker");
     expect(readFileSync(join(cwd, "src-tauri", "resources", "playwright", "playwright-worker.mjs"), "utf8")).toBe("worker");
     expect(readFileSync(join(cwd, "src-tauri", "resources", "playwright", "firefox-worker.mjs"), "utf8")).toBe("firefox worker");
+    expect(readFileSync(join(cwd, "src-tauri", "resources", "playwright", "synchronizer-worker.mjs"), "utf8")).toBe("synchronizer worker");
     expect(JSON.parse(readFileSync(join(cwd, "src-tauri", "resources", "playwright", "node_modules", "playwright-core", "package.json"), "utf8")).version).toBe("1.58.2");
     expect(JSON.parse(readFileSync(join(cwd, "src-tauri", "resources", "playwright", "node_modules", "ws", "package.json"), "utf8")).version).toBe("8.21.0");
     expect(JSON.parse(readFileSync(join(cwd, "src-tauri", "resources", "playwright", "node_modules", "@modelcontextprotocol", "sdk", "package.json"), "utf8")).version).toBe("1.30.0");

@@ -309,6 +309,43 @@ test("unowned routes return null so web.ts falls through to browser control", as
   expect(await handleUserApi(get("/api/v1/status"), launcher, store)).toBeNull();
 });
 
+test("Local API V2 creates, updates, lists, filters and deletes the shared profile", async () => {
+  const { store, launcher } = setup();
+  const created = await (await handleUserApi(post("/api/v2/browser-profile/create", {
+    name: "V2 资料", group_id: "g", username: "alice",
+  }), launcher, store))!.json();
+  const id = created.data.profile_id;
+  expect(created.code).toBe(0);
+  expect(typeof id).toBe("string");
+  expect(typeof created.data.profile_no).toBe("string");
+
+  const updated = await (await handleUserApi(post("/api/v2/browser-profile/update", {
+    profile_id: id, username: "bob",
+  }), launcher, store))!.json();
+  expect(updated).toEqual({ code: 0, msg: "success", data: {} });
+  expect(store.getProfile(id)).toMatchObject({ name: "V2 资料", username: "bob" });
+
+  const listed = await (await handleUserApi(post("/api/v2/browser-profile/list", {
+    profile_id: [id], profile_no: [created.data.profile_no], page: 1, limit: 20,
+  }), launcher, store))!.json();
+  expect(listed.data).toMatchObject({ page: 1, limit: 20, total: 1 });
+  expect(listed.data.list).toMatchObject([{ profile_id: id, profile_no: created.data.profile_no, name: "V2 资料" }]);
+
+  const removed = await (await handleUserApi(post("/api/v2/browser-profile/delete", {
+    profile_id: [id],
+  }), launcher, store))!.json();
+  expect(removed).toMatchObject({ code: 0, data: { deleted: 1 } });
+  expect(store.getProfile(id)).toBeNull();
+});
+
+test("Local API V2 category list exposes Chinese-compatible category and group fields", async () => {
+  const { store, launcher } = setup();
+  const body = await (await handleUserApi(post("/api/v2/category/list", { page: 1, limit: 10 }), launcher, store))!.json();
+  expect(body.data.list).toEqual([{
+    category_id: "g", category_name: "g", group_id: "g", group_name: "g",
+  }]);
+});
+
 // --- remote (HUB_URL) mode: management routes through the hub coordinator ---
 function fakeRemote() {
   const roster = [

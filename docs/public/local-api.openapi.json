@@ -4,7 +4,7 @@
     "title": "IDFRI Local API",
     "version": "0.1.0-beta.50",
     "summary": "IDFRI Local API：由正在运行的 IDFRI 提供、兼容 AdsPower 的本地 HTTP API。",
-    "description": "IDFRI 只在回环接口（http://127.0.0.1:50400）提供此 API。每次启动都会生成随机 256 位 Token；所有请求必须携带 `Authorization: Bearer <token>`，并通过严格的 Host 与 Origin 校验。认证失败返回 HTTP 401，来源校验失败返回 HTTP 403。不要通过反向代理、端口转发或隧道暴露此监听器。`browserStart` 或 `browserActive` 返回的 CDP WebSocket URL 可以完全控制浏览器及登录会话，应按凭据保护。\n\n该 API 是 AdsPower Local API 的兼容子集，已有客户端只需更改基础 URL。本文档只定义 13 个操作，不应假设其他 AdsPower 路由存在。`browserCookies` 以及 `userList` 的 `fp_verdict`/`fp_captured_at` 字段是 IDFRI 扩展。\n\n通过认证后，兼容路由使用 HTTP 200 和 `{ code, msg, data }` JSON 包装；成功时 `code` 为 `0`、`msg` 为 `\"success\"`，业务失败时 `code` 为 `-1`。浏览器控制路由忽略 HTTP 方法；分组与用户路由要求文档指定的方法。\n\n每个操作保留 `x-aliasmode-version-introduced` 兼容字段，表示该兼容契约最早覆盖的上游版本。IDFRI 本地版不提供 Cloud 路由或 Cloud 协调器。",
+    "description": "IDFRI 只在回环接口（http://127.0.0.1:50400）提供此 API。每次启动都会生成随机 256 位 Token；所有请求必须携带 `Authorization: Bearer <token>`，并通过严格的 Host 与 Origin 校验。认证失败返回 HTTP 401，来源校验失败返回 HTTP 403。不要通过反向代理、端口转发或隧道暴露此监听器。`browserStart` 或 `browserActive` 返回的 CDP WebSocket URL 可以完全控制浏览器及登录会话，应按凭据保护。\n\n该 API 是 AdsPower Local API V1/V2 的兼容子集，已有客户端只需更改基础 URL。本文档定义 22 个操作，不应假设其他 AdsPower 路由存在。`browserCookies` 以及 `userList` 的 `fp_verdict`/`fp_captured_at` 字段是 IDFRI 扩展。\n\n通过认证后，兼容路由使用 HTTP 200 和 `{ code, msg, data }` JSON 包装；成功时 `code` 为 `0`、`msg` 为 `\"success\"`，业务失败时 `code` 为 `-1`。V1 浏览器控制路由使用查询参数，V2 使用 POST JSON；分组与资料路由要求文档指定的方法。\n\n每个操作保留 `x-aliasmode-version-introduced` 兼容字段，表示该兼容契约最早覆盖的上游版本。IDFRI 本地版不提供 Cloud 路由或 Cloud 协调器。",
     "license": {
       "name": "Apache-2.0",
       "identifier": "Apache-2.0"
@@ -311,6 +311,126 @@
         }
       }
     },
+    "/api/v2/browser-profile/start": {
+      "post": {
+        "operationId": "browserProfileStart",
+        "tags": [
+          "browser"
+        ],
+        "summary": "启动资料浏览器（V2）",
+        "description": "使用 JSON 中的 `profile_id` 启动 IDFRI Chromium，可选传入 `launch_args` 字符串数组。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BrowserControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "启动结果。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BrowserStartResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/browser-profile/stop": {
+      "post": {
+        "operationId": "browserProfileStop",
+        "tags": [
+          "browser"
+        ],
+        "summary": "停止资料浏览器（V2）",
+        "description": "保存会话状态后停止 `profile_id` 对应的浏览器。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BrowserControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "停止结果。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/EmptyDataResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/browser-profile/active": {
+      "post": {
+        "operationId": "browserProfileActive",
+        "tags": [
+          "browser"
+        ],
+        "summary": "查询资料浏览器状态（V2）",
+        "description": "返回 `profile_id` 对应浏览器的运行状态和可用的 CDP 端点。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2BrowserControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "运行状态。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BrowserActiveResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/browser-profile/delete-cache": {
       "post": {
         "operationId": "browserProfileDeleteCache",
@@ -429,6 +549,50 @@
                       "data": {}
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/browser-profile/cookies": {
+      "get": {
+        "operationId": "browserProfileCookies",
+        "tags": [
+          "browser"
+        ],
+        "summary": "读取运行中资料的 Cookie（V2）",
+        "description": "使用 `profile_id` 查询参数读取 Cookie。为兼容 V2，`data.cookies` 是 Cookie 数组的 JSON 字符串。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProfileId"
+          },
+          {
+            "name": "urls",
+            "in": "query",
+            "required": false,
+            "description": "逗号分隔的 URL 列表。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cookie JSON 字符串或失败信息。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BrowserCookiesV2Response"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
                 }
               }
             }
@@ -826,6 +990,199 @@
           }
         }
       }
+    },
+    "/api/v2/category/list": {
+      "post": {
+        "operationId": "categoryListV2",
+        "tags": [
+          "group"
+        ],
+        "summary": "列出资料分组（V2）",
+        "description": "返回本地资料分组；`category_id`/`group_id` 均为分组名。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2PageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "分组列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2CategoryListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/browser-profile/create": {
+      "post": {
+        "operationId": "browserProfileCreate",
+        "tags": [
+          "user"
+        ],
+        "summary": "创建资料（V2）",
+        "description": "在 V1 和 V2 共用的本地资料库中创建资料。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "新资料 ID 和序号。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/V2ProfileCreateResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/browser-profile/update": {
+      "post": {
+        "operationId": "browserProfileUpdate",
+        "tags": [
+          "user"
+        ],
+        "summary": "更新资料（V2）",
+        "description": "按 `profile_id` 更新名称和凭据；未提供名称时保留原名称。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2ProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新结果。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/EmptyDataResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/browser-profile/list": {
+      "post": {
+        "operationId": "browserProfileList",
+        "tags": [
+          "user"
+        ],
+        "summary": "列出资料（V2）",
+        "description": "支持按分组、资料 ID 和资料序号过滤，并支持分页与排序。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2ProfileListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "资料列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/V2ProfileListResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/browser-profile/delete": {
+      "post": {
+        "operationId": "browserProfileDelete",
+        "tags": [
+          "user"
+        ],
+        "summary": "删除资料（V2）",
+        "description": "删除 `profile_id` 字符串或数组中的资料。",
+        "x-aliasmode-version-introduced": "0.1.0-beta.50",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/V2ProfileDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "删除数量与因浏览器仍运行而保留的资料 ID。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/UserDeleteResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Failure"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -843,6 +1200,17 @@
         "in": "query",
         "required": true,
         "description": "IDFRI 资料 ID（AdsPower `user_id`）。缺失时返回 `missing user_id`。",
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "example": "k1d0cd11"
+      },
+      "ProfileId": {
+        "name": "profile_id",
+        "in": "query",
+        "required": true,
+        "description": "IDFRI 资料 ID（V2）。",
         "schema": {
           "type": "string",
           "minLength": 1
@@ -1160,6 +1528,25 @@
           }
         ]
       },
+      "V2BrowserControlRequest": {
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "launch_args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "仅启动操作使用的额外 Chromium 参数。"
+          }
+        }
+      },
       "DeleteCacheRequest": {
         "type": "object",
         "required": [
@@ -1265,6 +1652,40 @@
               },
               "data": {
                 "$ref": "#/components/schemas/BrowserCookiesData"
+              }
+            }
+          }
+        ]
+      },
+      "BrowserCookiesV2Data": {
+        "type": "object",
+        "required": [
+          "cookies"
+        ],
+        "properties": {
+          "cookies": {
+            "type": "string",
+            "description": "Cookie 数组的 JSON 字符串。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrowserCookiesV2Response": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "const": 0
+              },
+              "msg": {
+                "const": "success"
+              },
+              "data": {
+                "$ref": "#/components/schemas/BrowserCookiesV2Data"
               }
             }
           }
@@ -1692,6 +2113,332 @@
             "description": "Alias of `fakey`."
           }
         }
+      },
+      "V2PageRequest": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        }
+      },
+      "V2Category": {
+        "type": "object",
+        "required": [
+          "category_id",
+          "category_name",
+          "group_id",
+          "group_name"
+        ],
+        "properties": {
+          "category_id": {
+            "type": "string"
+          },
+          "category_name": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "group_name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "V2CategoryListData": {
+        "type": "object",
+        "required": [
+          "list",
+          "page",
+          "limit"
+        ],
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/V2Category"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "V2CategoryListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "const": 0
+              },
+              "msg": {
+                "const": "success"
+              },
+              "data": {
+                "$ref": "#/components/schemas/V2CategoryListData"
+              }
+            }
+          }
+        ]
+      },
+      "V2ProfileCreateData": {
+        "type": "object",
+        "required": [
+          "profile_id",
+          "profile_no"
+        ],
+        "properties": {
+          "profile_id": {
+            "type": "string"
+          },
+          "profile_no": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "V2ProfileCreateResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "const": 0
+              },
+              "msg": {
+                "const": "success"
+              },
+              "data": {
+                "$ref": "#/components/schemas/V2ProfileCreateData"
+              }
+            }
+          }
+        ]
+      },
+      "V2ProfileUpdateRequest": {
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "email_password": {
+            "type": "string"
+          },
+          "emailPassword": {
+            "type": "string"
+          },
+          "fakey": {
+            "type": "string"
+          },
+          "twofa": {
+            "type": "string"
+          }
+        }
+      },
+      "V2ProfileDeleteRequest": {
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "properties": {
+          "profile_id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "V2ProfileListRequest": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string"
+          },
+          "profile_id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "profile_no": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "sort_type": {
+            "type": "string",
+            "enum": [
+              "created_time",
+              "last_open_time"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        }
+      },
+      "V2ProfileRecord": {
+        "type": "object",
+        "required": [
+          "profile_id",
+          "profile_no",
+          "name",
+          "group_id"
+        ],
+        "properties": {
+          "profile_id": {
+            "type": "string"
+          },
+          "profile_no": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "created_time": {
+            "type": "integer"
+          },
+          "last_open_time": {
+            "type": "integer"
+          },
+          "fp_verdict": {
+            "type": "string"
+          },
+          "fp_captured_at": {
+            "type": "string"
+          }
+        }
+      },
+      "V2ProfileListData": {
+        "type": "object",
+        "required": [
+          "list",
+          "page",
+          "limit",
+          "total"
+        ],
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/V2ProfileRecord"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "V2ProfileListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "const": 0
+              },
+              "msg": {
+                "const": "success"
+              },
+              "data": {
+                "$ref": "#/components/schemas/V2ProfileListData"
+              }
+            }
+          }
+        ]
       }
     }
   }

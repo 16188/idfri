@@ -8,7 +8,7 @@ import type {
   ScriptRecord,
   ScriptSummary,
 } from "../contracts/cloud-v1.ts";
-import type { ScriptRun } from "../scripts.ts";
+import type { ScriptRun, VisualFlowStep } from "../scripts.ts";
 import {
   CLOUD_DIAGNOSTIC_TYPES,
   type CloudDiagnosticEvent,
@@ -845,7 +845,7 @@ export async function deleteGroup(name: string): Promise<any> {
 }
 
 // ---- Local scripts ------------------------------------------------------------
-export type { ScriptLanguage, ScriptRecord, ScriptRun, ScriptSummary };
+export type { ScriptLanguage, ScriptRecord, ScriptRun, ScriptSummary, VisualFlowStep };
 
 type ScriptInvoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 
@@ -903,6 +903,10 @@ export async function fetchScript(id: string): Promise<ScriptRecord> {
 
 export async function createScript(input: Pick<ScriptRecord, "name" | "description" | "language" | "source">): Promise<ScriptRecord> {
   return (await scriptRequest("/ui/api/scripts", { method: "POST", body: JSON.stringify(input) })).script as ScriptRecord;
+}
+
+export async function createVisualScript(input: { name: string; description: string; steps: VisualFlowStep[] }): Promise<ScriptRecord> {
+  return (await scriptRequest("/ui/api/scripts/visual", { method: "POST", body: JSON.stringify(input) })).script as ScriptRecord;
 }
 
 export async function updateScript(id: string, input: Pick<ScriptRecord, "name" | "description" | "language" | "source" | "revision">): Promise<ScriptRecord> {
@@ -978,4 +982,27 @@ export async function fetchScriptLog(runId: string, offset: number): Promise<{ t
   const body = await scriptRequest(`/ui/api/scripts/log?runId=${encodeURIComponent(runId)}&offset=${offset}`);
   if (typeof body.text !== "string" || !Number.isFinite(body.nextOffset)) throw new Error("脚本日志返回了无效数据");
   return { text: body.text, nextOffset: body.nextOffset };
+}
+
+export interface WindowSynchronizerStatus {
+  state: "stopped" | "starting" | "running" | "stopping" | "failed";
+  leader?: { id: string; name: string };
+  followers: Array<{ id: string; name: string }>;
+  events: number;
+  failures: number;
+  error?: string;
+}
+
+export async function fetchWindowSynchronizer(): Promise<WindowSynchronizerStatus> {
+  return (await scriptRequest("/ui/api/synchronizer")).synchronizer as WindowSynchronizerStatus;
+}
+
+export async function startWindowSynchronizer(profileIds: string[]): Promise<WindowSynchronizerStatus> {
+  return (await scriptRequest("/ui/api/synchronizer/start", {
+    method: "POST", body: JSON.stringify({ profileIds }),
+  })).synchronizer as WindowSynchronizerStatus;
+}
+
+export async function stopWindowSynchronizer(): Promise<WindowSynchronizerStatus> {
+  return (await scriptRequest("/ui/api/synchronizer/stop", { method: "POST", body: "{}" })).synchronizer as WindowSynchronizerStatus;
 }

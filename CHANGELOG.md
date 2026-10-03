@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 增加指纹一致性与真实网站回归、多窗口同步器、常用 Local API V2 和可视化自动化流程；Local API 公开文档扩展到 22 个实际路由；Linux Chromium 改用文件描述符 0 接收完整 IDFRI 指纹配置，并接入独立仓库的分段构建与发布链。
+
 - 新增 Ubuntu/Debian x64 桌面预览版：输出 DEB，固定校验 ungoogled Chromium 153 和原生 AliasMode Firefox 152，编译 Linux sidecar/MCP，携带 Node/Python Playwright 运行时，使用 Secret Service 保存敏感凭据，并在发布前完成两个浏览器的真实启动验收；Linux 版暂不启用应用内更新，Windows 自构建 IDFRI Chromium 保持不变。
 - 将主程序迁移到独立的 `16188/idfri` 单提交仓库，移除 GitHub Fork 关系和旧仓库品牌，统一公开项目、支持、更新 API、发布白名单与文档校验信息，并保持 Rust 格式检查通过；上游法定声明、Firefox 引擎名称及兼容协议标识继续保留。
 - 限制 Firefox 兼容工作流只响应 `main` 分支，并让 Linux/macOS 只验证已固定的 Firefox 运行时，避免 Release 标签重复构建或错误要求仅支持 Windows 的 IDFRI Chromium。

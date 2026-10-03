@@ -1,0 +1,51 @@
+name: Chromium fingerprint regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - fingerprint.ts
+      - diagnose.ts
+      - scripts/fingerprint-regression.ts
+      - scripts/fingerprint-regression.test.ts
+      - .github/workflows/fingerprint-regression.yml
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+      - run: bun install --frozen-lockfile
+      - name: Download and verify IDFRI Chromium 153
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://github.com/16188/idfri-browser/releases/download/browser-v153.0.8010.52-idfri.2/idfri-browser_153.0.8010.52-1.idfri2_windows_x64.zip"
+          $archive = Join-Path $env:RUNNER_TEMP "idfri-browser.zip"
+          $runtime = Join-Path $env:RUNNER_TEMP "idfri-browser"
+          Invoke-WebRequest $url -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne "66df4bf70ba1f54145961a7e567acc0a019ac3c9df850f6d42e7fbbe7a825626") { throw "archive SHA-256 mismatch" }
+          Expand-Archive $archive -DestinationPath $runtime
+          $browser = @(Get-ChildItem $runtime -Recurse -File -Filter chrome.exe)
+          if ($browser.Count -ne 1) { throw "archive must contain exactly one chrome.exe" }
+          "IDFRI_CHROMIUM_BINARY_PATH=$($browser[0].FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "IDFRI_CHROMIUM_BINARY_SHA256=74a095427ba38407405eb63ea330070278236838cf8f91532d8d66a42243096a" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "IDFRI_REGRESSION_OUTPUT=$env:GITHUB_WORKSPACE\artifacts\fingerprint-regression" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - run: bun scripts/fingerprint-regression.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fingerprint-regression-windows
+          path: artifacts/fingerprint-regression
+          if-no-files-found: error
+          retention-days: 30

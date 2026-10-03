@@ -64,7 +64,8 @@ import { addBrowserCookie } from "./session.ts";
 import { join, resolve } from "node:path";
 import { readdirSync, readFileSync } from "node:fs";
 import { validAgentAuthorization } from "./agent-control.ts";
-import { ScriptError, type ScriptLibrary, type ScriptSupervisor } from "./scripts.ts";
+import { compileVisualFlow, ScriptError, type ScriptLibrary, type ScriptSupervisor } from "./scripts.ts";
+import type { WindowSynchronizer } from "./synchronizer.ts";
 
 /** Readiness metadata supplied by the desktop parent process. */
 export interface UiHealthMetadata {
@@ -539,6 +540,7 @@ export interface UiRuntimeOptions {
   /** Product boundary for IDFRI Community Edition. */
   localOnly?: boolean;
   scripts?: { library: ScriptLibrary; runner: ScriptSupervisor; nonce: string };
+  synchronizer?: { manager: WindowSynchronizer; nonce: string };
   appConfig?: AppConfigStore;
   paths?: StatePaths;
   defaultCloudUrl?: string;
@@ -570,6 +572,29 @@ export async function handleUiRequest(
   const { pathname } = new URL(req.url);
   if (!pathname.startsWith("/ui/api/")) return null;
 
+  if (pathname === "/ui/api/synchronizer" || pathname.startsWith("/ui/api/synchronizer/")) {
+    const synchronizer = options.synchronizer;
+    if (!synchronizer) return noStoreJson({ ok: false, error: "多窗口同步器需要桌面应用" }, 503);
+    if (!validAgentAuthorization(req.headers.get("authorization"), synchronizer.nonce)) return noStoreJson({ ok: false, error: "同步器授权失败" }, 401);
+    const origin = req.headers.get("origin");
+    if (origin && origin !== new URL(req.url).origin) return noStoreJson({ ok: false, error: "禁止跨来源请求" }, 403);
+    if (req.method !== "GET") {
+      const rejected = rejectUntrustedJsonMutation(req);
+      if (rejected) return rejected;
+    }
+    try {
+      if (pathname === "/ui/api/synchronizer" && req.method === "GET") return noStoreJson({ ok: true, synchronizer: synchronizer.manager.status() });
+      if (pathname === "/ui/api/synchronizer/start" && req.method === "POST") {
+        const body = await req.json();
+        return noStoreJson({ ok: true, synchronizer: await synchronizer.manager.start(body?.profileIds) });
+      }
+      if (pathname === "/ui/api/synchronizer/stop" && req.method === "POST") return noStoreJson({ ok: true, synchronizer: await synchronizer.manager.stop() });
+      return noStoreJson({ ok: false, error: "未知同步器操作" }, 404);
+    } catch (error) {
+      return noStoreJson({ ok: false, error: msg(error) }, 400);
+    }
+  }
+
   if (pathname === "/ui/api/scripts" || pathname.startsWith("/ui/api/scripts/")) {
     const scripts = options.scripts;
     if (!scripts) return noStoreJson({ ok: false, error: "脚本功能需要桌面应用" }, 503);
@@ -589,6 +614,16 @@ export async function handleUiRequest(
       }
       if (pathname === "/ui/api/scripts/stop" && req.method === "POST") {
         return noStoreJson({ ok: true, run: await scripts.runner.stop() });
+      }
+      if (pathname === "/ui/api/scripts/visual" && req.method === "POST") {
+        const body = await req.json();
+        const source = compileVisualFlow(body?.steps);
+        return noStoreJson({ ok: true, script: await scripts.library.save({
+          name: body?.name,
+          description: body?.description ?? "可视化自动化流程",
+          language: "javascript",
+          source,
+        }) });
       }
       if (pathname === "/ui/api/scripts/log" && req.method === "GET") {
         const params = new URL(req.url).searchParams;

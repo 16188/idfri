@@ -7,9 +7,10 @@ import type {
   ScriptSummary,
 } from "../contracts/cloud-v1.ts";
 import type { ScriptRun } from "../scripts.ts";
-import type { UiProfile } from "./api.ts";
+import type { UiProfile, VisualFlowStep } from "./api.ts";
 import {
   createScript,
+  createVisualScript,
   deleteScript,
   fetchPublishedScript,
   fetchPublishedScripts,
@@ -26,6 +27,55 @@ import {
   unpublishScript,
   updateScript,
 } from "./api.ts";
+
+const VISUAL_STEP_LABELS: Record<VisualFlowStep["type"], string> = {
+  goto: "打开网址", click: "点击元素", fill: "输入文本", waitFor: "等待元素",
+  wait: "等待时间", scroll: "滚动页面", screenshot: "截图",
+};
+
+function newVisualStep(type: VisualFlowStep["type"]): VisualFlowStep {
+  if (type === "goto") return { type, url: "https://" };
+  if (type === "click" || type === "waitFor") return { type, selector: "" };
+  if (type === "fill") return { type, selector: "", text: "" };
+  if (type === "wait") return { type, milliseconds: 1000 };
+  if (type === "scroll") return { type, x: 0, y: 600 };
+  return { type: "screenshot" };
+}
+
+function VisualFlowBuilder({ busy, onCreate, onCancel }: {
+  busy: boolean;
+  onCreate: (value: { name: string; description: string; steps: VisualFlowStep[] }) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("新自动化流程");
+  const [description, setDescription] = useState("");
+  const [steps, setSteps] = useState<VisualFlowStep[]>([newVisualStep("goto")]);
+  const replace = (index: number, step: VisualFlowStep) => setSteps((current) => current.map((item, i) => i === index ? step : item));
+  return <section className="settings-card visual-flow">
+    <header><h2>新建可视化流程</h2><span className="chip">无需写代码</span></header>
+    <div className="card-body">
+      <label className="fld"><span>流程名称</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <label className="fld"><span>说明</span><input className="input" value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+      <div className="visual-steps">{steps.map((step, index) => <div className="visual-step" key={index}>
+        <b>{index + 1}</b>
+        <select className="select" value={step.type} onChange={(event) => replace(index, newVisualStep(event.target.value as VisualFlowStep["type"]))}>
+          {Object.entries(VISUAL_STEP_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+        </select>
+        {step.type === "goto" && <input className="input" aria-label="网址" placeholder="https://example.com" value={step.url} onChange={(event) => replace(index, { ...step, url: event.target.value })} />}
+        {(step.type === "click" || step.type === "waitFor") && <input className="input" aria-label="元素选择器" placeholder="#login 或 button[type=submit]" value={step.selector} onChange={(event) => replace(index, { ...step, selector: event.target.value })} />}
+        {step.type === "fill" && <><input className="input" aria-label="元素选择器" placeholder="#username" value={step.selector} onChange={(event) => replace(index, { ...step, selector: event.target.value })} /><input className="input" aria-label="输入文本" placeholder="要输入的文字" value={step.text} onChange={(event) => replace(index, { ...step, text: event.target.value })} /></>}
+        {step.type === "wait" && <input className="input" aria-label="等待毫秒" type="number" min="0" max="60000" value={step.milliseconds} onChange={(event) => replace(index, { ...step, milliseconds: Number(event.target.value) })} />}
+        {step.type === "scroll" && <><input className="input" aria-label="横向滚动" type="number" value={step.x} onChange={(event) => replace(index, { ...step, x: Number(event.target.value) })} /><input className="input" aria-label="纵向滚动" type="number" value={step.y} onChange={(event) => replace(index, { ...step, y: Number(event.target.value) })} /></>}
+        <button className="btn ghost" type="button" disabled={steps.length === 1} onClick={() => setSteps((current) => current.filter((_, i) => i !== index))}>删除</button>
+      </div>)}</div>
+      <div className="script-actions">
+        <button className="btn" type="button" disabled={busy || steps.length >= 100} onClick={() => setSteps((current) => [...current, newVisualStep("click")])}>添加步骤</button>
+        <button className="btn primary" type="button" disabled={busy || !name.trim()} onClick={() => void onCreate({ name, description, steps })}>{busy ? "创建中…" : "创建流程"}</button>
+        <button className="btn ghost" type="button" disabled={busy} onClick={onCancel}>取消</button>
+      </div>
+    </div>
+  </section>;
+}
 
 function languageFor(file: File): ScriptLanguage | null {
   const name = file.name.toLowerCase();
@@ -71,6 +121,7 @@ export function ScriptsPage({ onViewRun }: { onViewRun: () => void }) {
   const [showEmail, setShowEmail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [visualOpen, setVisualOpen] = useState(false);
   const [currentRun, setCurrentRun] = useState<ScriptRun | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
@@ -212,6 +263,15 @@ export function ScriptsPage({ onViewRun }: { onViewRun: () => void }) {
     catch (nextError) { setError(errorText(nextError)); }
   };
 
+  const createFlow = async (value: { name: string; description: string; steps: VisualFlowStep[] }) => {
+    setBusy(true); setError(null);
+    try {
+      const created = await createVisualScript(value);
+      setScript(created); setVisualOpen(false); await reload();
+    } catch (nextError) { setError(errorText(nextError)); }
+    finally { setBusy(false); }
+  };
+
   if (!desktop) {
     return <div className="workspace scripts-page"><div className="emptystate"><b>脚本功能需要桌面应用。</b><p>请打开 IDFRI 桌面应用管理本地脚本。</p></div></div>;
   }
@@ -223,7 +283,7 @@ export function ScriptsPage({ onViewRun }: { onViewRun: () => void }) {
     <div className="workspace scripts-page">
       <div className="scripts-head">
         <div><h2 className="sect-title">脚本</h2><p className="formnote">本地版脚本保存在这台电脑上，运行记录和日志不会上传。</p></div>
-        {tab === "mine" && <button className="btn primary" type="button" disabled={busy} onClick={() => importRef.current?.click()}>导入脚本</button>}
+        {tab === "mine" && <div className="script-actions"><button className="btn" type="button" disabled={busy} onClick={() => setVisualOpen(true)}>新建可视化流程</button><button className="btn primary" type="button" disabled={busy} onClick={() => importRef.current?.click()}>导入脚本</button></div>}
       </div>
       <div className="tabs scripts-tabs" role="tablist" aria-label="脚本库">
         <button className={`tab${tab === "mine" ? " active" : ""}`} role="tab" aria-selected={tab === "mine"} type="button" onClick={() => setTab("mine")}>我的脚本</button>
@@ -231,6 +291,7 @@ export function ScriptsPage({ onViewRun }: { onViewRun: () => void }) {
       </div>
       {error && <div className="modal-err" role="alert">{error}</div>}
       {tab === "library" ? <PublicLibrary onImported={imported} /> : <>
+        {visualOpen && <VisualFlowBuilder busy={busy} onCreate={createFlow} onCancel={() => setVisualOpen(false)} />}
         {currentRun && <button className="scripts-run-note" type="button" onClick={onViewRun}>{currentRun.scriptName}：{runStatusName(currentRun.status)}，查看运行详情</button>}
         <div className="scripts-layout">
           <div className="scripts-list" aria-label="已保存的脚本">

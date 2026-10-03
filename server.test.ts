@@ -209,9 +209,27 @@ test("isAdsPowerBrowserControl matches only the lifecycle routes remote mode rou
   expect(isAdsPowerBrowserControl("/api/v1/browser/start")).toBe(true);
   expect(isAdsPowerBrowserControl("/api/v1/browser/stop")).toBe(true);
   expect(isAdsPowerBrowserControl("/api/v1/browser/active")).toBe(true);
+  expect(isAdsPowerBrowserControl("/api/v2/browser-profile/start")).toBe(true);
+  expect(isAdsPowerBrowserControl("/api/v2/browser-profile/stop")).toBe(true);
+  expect(isAdsPowerBrowserControl("/api/v2/browser-profile/active")).toBe(true);
   expect(isAdsPowerBrowserControl("/api/v1/status")).toBe(false); // health passes through
   expect(isAdsPowerBrowserControl("/api/v2/browser-profile/delete-cache")).toBe(false); // cache trim passes
   expect(isAdsPowerBrowserControl("/ui/api/profiles")).toBe(false);
+});
+
+test("Local API V2 starts, checks and stops a profile with JSON bodies", async () => {
+  const h = harness();
+  const postV2 = (action: string) => new Request(`http://127.0.0.1:50400/api/v2/browser-profile/${action}`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ profile_id: "k1d0cd11", launch_args: [] }),
+  });
+  try {
+    expect(await (await handleRequest(postV2("start"), h.launcher, h.store)).json()).toMatchObject({
+      code: 0, data: { ws: { puppeteer: expect.stringContaining("ws://") }, debug_port: expect.any(String) },
+    });
+    expect(await (await handleRequest(postV2("active"), h.launcher, h.store)).json()).toMatchObject({ code: 0, data: { status: "Active" } });
+    expect((await (await handleRequest(postV2("stop"), h.launcher, h.store)).json()).code).toBe(0);
+  } finally { await h.launcher.stop("k1d0cd11"); h.store.close(); }
 });
 
 test("automation health endpoint validates and relays the complete snapshot", async () => {

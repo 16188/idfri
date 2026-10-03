@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ScriptLibrary, ScriptSupervisor, resolveScriptRunner, verifyScriptRuntime, type ScriptExecution } from "./scripts.ts";
+import { compileVisualFlow, ScriptLibrary, ScriptSupervisor, resolveScriptRunner, verifyScriptRuntime, type ScriptExecution } from "./scripts.ts";
 import { handleUiRequest } from "./ui.ts";
 import { CloudClient } from "./cloud-client.ts";
 
@@ -10,6 +10,28 @@ const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function root() { const dir = mkdtempSync(join(tmpdir(), "aliasmode-scripts-")); roots.push(dir); return dir; }
 const input = { name: "Visit", description: "Example", language: "javascript" as const, source: "export default async () => {};" };
+
+test("visual flow compiler emits the existing Playwright script contract", () => {
+  const source = compileVisualFlow([
+    { type: "goto", url: "https://example.com" },
+    { type: "fill", selector: "#search", text: "中文关键词" },
+    { type: "click", selector: "button[type=submit]" },
+    { type: "waitFor", selector: ".results" },
+    { type: "wait", milliseconds: 250 },
+    { type: "scroll", x: 0, y: 600 },
+    { type: "screenshot" },
+  ]);
+  expect(source).toContain("export default async function");
+  expect(source).toContain("https://example.com/");
+  expect(source).toContain("idfri-screenshot-");
+  expect(source).not.toContain("eval(");
+});
+
+test("visual flow compiler rejects unsafe URLs and unbounded values", () => {
+  expect(() => compileVisualFlow([{ type: "goto", url: "file:///etc/passwd" }])).toThrow("HTTP/HTTPS");
+  expect(() => compileVisualFlow([{ type: "click", selector: "" }])).toThrow("选择器");
+  expect(() => compileVisualFlow([{ type: "wait", milliseconds: 60_001 }])).toThrow("60000");
+});
 
 function harness(execute: ScriptExecution = async () => {}, options: { active?: string[]; cloud?: any; firefoxOwner?: any; realExecute?: boolean } = {}) {
   const directory = root();
@@ -265,7 +287,7 @@ test("all script API operations require the desktop nonce and trusted origin", a
   const h = harness();
   const nonce = "a".repeat(64);
   const options = { scripts: { library: h.library, runner: h.supervisor, nonce } };
-  for (const [method, path] of [["GET", ""], ["POST", ""], ["GET", "/run"], ["POST", "/run"], ["POST", "/stop"], ["GET", "/log"], ["GET", "/id"], ["PATCH", "/id"], ["DELETE", "/id"], ["GET", "/library"], ["GET", "/library/id"], ["POST", "/library/id/import"], ["PUT", "/id/publication"], ["DELETE", "/id/publication"]]) {
+  for (const [method, path] of [["GET", ""], ["POST", ""], ["POST", "/visual"], ["GET", "/run"], ["POST", "/run"], ["POST", "/stop"], ["GET", "/log"], ["GET", "/id"], ["PATCH", "/id"], ["DELETE", "/id"], ["GET", "/library"], ["GET", "/library/id"], ["POST", "/library/id/import"], ["PUT", "/id/publication"], ["DELETE", "/id/publication"]]) {
     const response = await handleUiRequest(new Request(`http://127.0.0.1/ui/api/scripts${path}`, { method }), {} as any, {} as any, null, options);
     expect(response?.status).toBe(401);
   }
@@ -280,6 +302,13 @@ test("all script API operations require the desktop nonce and trusted origin", a
   expect(imported?.headers.get("cache-control")).toBe("no-store");
   expect(h.events).toEqual([]);
   expect((await h.library.list()).length).toBe(1);
+
+  const visual = await handleUiRequest(new Request("http://127.0.0.1/ui/api/scripts/visual", {
+    method: "POST", headers: { authorization: `Bearer ${nonce}`, "content-type": "application/json" },
+    body: JSON.stringify({ name: "可视化流程", steps: [{ type: "goto", url: "https://example.com" }] }),
+  }), {} as any, {} as any, null, options);
+  expect(visual?.status).toBe(200);
+  expect((await visual!.json()).script.source).toContain("page.goto");
 });
 
 test("private Cloud methods use existing auth and revision contract", async () => {

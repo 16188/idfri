@@ -27,6 +27,7 @@ import type { Profile } from "./types.ts";
 import { buildNewProfile, type NewProfileInput } from "./create.ts";
 import { attachTimezones } from "./geoip.ts";
 import { isValidProfileName } from "./profile-validation.ts";
+import { normalizeProfileIds } from "./lifecycle-admission.ts";
 
 /** Best-effort geoip fetch, injectable for tests; defaults to real ip-api.com. */
 type GeoipFetch = (url: string, init: RequestInit) => Promise<{ json(): Promise<any> }>;
@@ -124,6 +125,94 @@ export async function handleUserApi(
   roster: ProfileRoster | null = remote ?? null,
 ): Promise<Response | null> {
   const { pathname, searchParams } = new URL(req.url);
+
+  // AdsPower V2 renamed users to browser profiles and moved list filters into
+  // JSON bodies. Translate those shapes into the existing, shared V1 storage
+  // path so both API generations always see the same profiles.
+  if (pathname === "/api/v2/category/list" && req.method === "POST") {
+    const body = await req.clone().json().catch(() => ({})) as any;
+    const page = intParam(String(body?.page ?? ""), 1);
+    const limit = intParam(String(body?.limit ?? ""), 100);
+    const translated = await handleUserApi(
+      new Request(`${new URL(req.url).origin}/api/v1/group/list?page=${page}&page_size=${limit}`),
+      launcher, store, remote, geoipFetch, roster,
+    );
+    const result = await translated!.json() as any;
+    if (result.code !== 0) return Response.json(result);
+    return ok({
+      list: result.data.list.map((item: any) => ({
+        category_id: item.group_id,
+        category_name: item.group_name,
+        group_id: item.group_id,
+        group_name: item.group_name,
+      })),
+      page,
+      limit,
+    });
+  }
+
+  if (pathname === "/api/v2/browser-profile/create" && req.method === "POST") {
+    const body = await req.clone().json().catch(() => null) as any;
+    if (!body) return fail("invalid JSON body");
+    const translated = await handleUserApi(postRequest(req, "/api/v1/user/create", body), launcher, store, remote, geoipFetch, roster);
+    const result = await translated!.json() as any;
+    if (result.code !== 0) return Response.json(result);
+    const id = String(result.data.id);
+    return ok({ profile_id: id, profile_no: String(store.getSerial(id) ?? "") });
+  }
+
+  if (pathname === "/api/v2/browser-profile/update" && req.method === "POST") {
+    const body = await req.clone().json().catch(() => null) as any;
+    if (!body) return fail("invalid JSON body");
+    const id = typeof body.profile_id === "string" ? body.profile_id : "";
+    if (!id) return fail("missing profile_id");
+    let name = body.name;
+    if (!isValidProfileName(name)) {
+      name = remote ? (await remote.getProfile(id).catch(() => null))?.name : store.getProfile(id)?.name;
+    }
+    return (await handleUserApi(
+      postRequest(req, "/api/v1/user/update", { ...body, user_id: id, name }),
+      launcher, store, remote, geoipFetch, roster,
+    ))!;
+  }
+
+  if (pathname === "/api/v2/browser-profile/delete" && req.method === "POST") {
+    const body = await req.clone().json().catch(() => null) as any;
+    if (!body) return fail("invalid JSON body");
+    return (await handleUserApi(
+      postRequest(req, "/api/v1/user/delete", { user_ids: normalizeProfileIds(body.profile_id) }),
+      launcher, store, remote, geoipFetch, roster,
+    ))!;
+  }
+
+  if (pathname === "/api/v2/browser-profile/list" && req.method === "POST") {
+    const body = await req.clone().json().catch(() => null) as any;
+    if (!body) return fail("invalid JSON body");
+    const translated = await handleUserApi(
+      new Request(`${new URL(req.url).origin}/api/v1/user/list?page=1&page_size=100000`),
+      launcher, store, remote, geoipFetch, roster,
+    );
+    const result = await translated!.json() as any;
+    if (result.code !== 0) return Response.json(result);
+    let list = result.data.list as any[];
+    if (body.group_id !== undefined) list = list.filter((item) => normalizeGroup(item.group_id) === normalizeGroup(body.group_id));
+    const ids = new Set(normalizeProfileIds(body.profile_id));
+    if (ids.size) list = list.filter((item) => ids.has(String(item.user_id)));
+    const numbers = new Set(normalizeProfileIds(body.profile_no));
+    if (numbers.size) list = list.filter((item) => numbers.has(String(item.serial_number)));
+    const sortField = body.sort_type === "last_open_time" ? "last_open_time" : "created_time";
+    const direction = body.sort_order === "asc" ? 1 : -1;
+    list.sort((a, b) => direction * (Number(a[sortField] ?? 0) - Number(b[sortField] ?? 0)));
+    const page = intParam(String(body.page ?? ""), 1);
+    const limit = Math.min(1000, intParam(String(body.limit ?? ""), 100));
+    const total = list.length;
+    list = list.slice((page - 1) * limit, page * limit).map(({ user_id, serial_number, ...item }) => ({
+      ...item,
+      profile_id: user_id,
+      profile_no: serial_number,
+    }));
+    return ok({ list, page, limit, total });
+  }
 
   // --- groups: id == name (aliasmode has no group ids) ---
   if (pathname === "/api/v1/group/list" && req.method === "GET") {
@@ -308,4 +397,12 @@ export async function handleUserApi(
   }
 
   return null;
+}
+
+function postRequest(source: Request, pathname: string, body: unknown): Request {
+  return new Request(`${new URL(source.url).origin}${pathname}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

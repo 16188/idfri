@@ -161,6 +161,7 @@ export async function prepareLinuxBundle(
     ["playwright-worker.mjs", "worker.mjs"],
     ["playwright-worker.mjs", "playwright-worker.mjs"],
     ["firefox-worker.mjs", "firefox-worker.mjs"],
+    ["synchronizer-worker.mjs", "synchronizer-worker.mjs"],
   ] as const) cpSync(join(cwd, source), join(playwrightRoot, destination));
 
   const agentRoot = join(playwrightRoot, "agent");

@@ -170,7 +170,7 @@ test("profile overrides reach every supported IDFRI fingerprint surface", () => 
   expect(config.permissions.geolocation).toBe("granted");
   expect(config.webrtc.ipHandlingPolicy).toBe("default_public_interface_only");
   const args = deriveChromiumFingerprintArgs(profile({ fingerprint }));
-  expect(args).toContain("--idfri-fp-stdin");
+  expect(args).toContain(process.platform === "win32" ? "--idfri-fp-stdin" : "--fury-fp-fd=0");
   expect(args).toContain("--disable-features=WebGPU");
   expect(args).toContain("--disable-gpu");
   expect(args).toContain("--accept-lang=en-US,en");
@@ -197,7 +197,7 @@ test("IDFRI Chromium refuses a non-Windows persona instead of partially spoofing
 });
 
 test("IDFRI Browser 153 args keep version, locale, screen, GPU and TLS coherent", () => {
-  const args = deriveChromiumFingerprintArgs(profile({ timezone: "America/New_York" }));
+  const args = deriveChromiumFingerprintArgs(profile({ timezone: "America/New_York" }), "win32");
   for (const expected of [
     "--fingerprint-platform=windows",
     "--fingerprint-brand=chrome",
@@ -212,6 +212,12 @@ test("IDFRI Browser 153 args keep version, locale, screen, GPU and TLS coherent"
   ]) expect(args).toContain(expected);
   expect(args.filter((arg) => arg.startsWith("--fingerprint-device-memory="))).toHaveLength(1);
   expect(args.some((arg) => arg.startsWith("--user-agent="))).toBe(true);
+});
+
+test("Linux sends the complete fingerprint config through inherited stdin fd 0", () => {
+  const args = deriveChromiumFingerprintArgs(profile(), "linux");
+  expect(args).toContain("--fury-fp-fd=0");
+  expect(args).not.toContain("--idfri-fp-stdin");
 });
 
 test("proxyServerFlag url-encodes credentials and respects scheme", () => {

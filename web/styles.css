@@ -1647,3 +1647,8 @@ td.col-tags .chip + .chip { margin-left: 4px; }
 .script-profile.running { color: var(--accent-ink); }.script-profile.failed { color: var(--danger-ink); }.script-profile.succeeded { color: var(--success-ink); }
 .script-profile small { grid-column: 1 / -1; color: var(--danger-ink); }.script-profile small.warning { color: var(--warn-ink); }
 @media (max-width: 700px) { .scripts-layout { grid-template-columns: 1fr; }.scripts-head, .scripts-library-search { align-items: flex-start; flex-direction: column; }.scripts-library-search { align-items: stretch; } }
+.visual-flow { margin-bottom: 16px; }
+.visual-steps { display: grid; gap: 8px; }
+.visual-step { display: grid; grid-template-columns: 32px minmax(130px, .55fr) minmax(180px, 1fr) minmax(160px, 1fr) auto; gap: 8px; align-items: center; }
+.visual-step > b { text-align: center; color: var(--muted); }
+@media (max-width: 900px) { .visual-step { grid-template-columns: 32px 1fr; } .visual-step > .input, .visual-step > .btn { grid-column: 2; } }

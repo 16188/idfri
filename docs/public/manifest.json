@@ -3,7 +3,7 @@
   "productVersion": "0.1.0-beta.50",
   "openapi": {
     "path": "local-api.openapi.json",
-    "sha256": "ffada09f7a28158a097527f2e5fb65973af577301368421b182b68e43b7ba150"
+    "sha256": "8f55e00850e02d426ae1a53c42ce8010298120997cbb236999316d15aa045612"
   },
   "mcpCatalogs": {
     "current-source": {

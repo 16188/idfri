@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "docs:public": "bun scripts/generate-public-docs.mjs",
     "docs:public:check": "bun scripts/generate-public-docs.mjs --check",
+    "test:fingerprint": "bun scripts/fingerprint-regression.ts",
     "desktop:prepare": "bun scripts/prepare-windows-bundle.ts",
     "desktop:prepare:linux": "bun scripts/prepare-linux-bundle.ts && python3 -m pip install --disable-pip-version-check --no-compile --target src-tauri/resources/playwright/python/site-packages playwright==1.58.0",
     "desktop:build:nsis": "bun run desktop:prepare && tauri build --bundles nsis --no-sign",
