@@ -257,10 +257,10 @@ export async function fingerprintProbe(): Promise<FingerprintSample> {
     const gl = (c.getContext("webgl") || c.getContext("experimental-webgl")) as WebGLRenderingContext | null;
     if (gl) {
       const dbg = gl.getExtension("WEBGL_debug_renderer_info");
-      if (dbg) {
-        out.webglVendor = String(gl.getParameter((dbg as any).UNMASKED_VENDOR_WEBGL));
-        out.webglRenderer = String(gl.getParameter((dbg as any).UNMASKED_RENDERER_WEBGL));
-      }
+      const vendor = gl.getParameter((dbg as any)?.UNMASKED_VENDOR_WEBGL ?? 0x9245);
+      const renderer = gl.getParameter((dbg as any)?.UNMASKED_RENDERER_WEBGL ?? 0x9246);
+      if (vendor != null) out.webglVendor = String(vendor);
+      if (renderer != null) out.webglRenderer = String(renderer);
     }
   } catch (e) {
     err("webgl", e);

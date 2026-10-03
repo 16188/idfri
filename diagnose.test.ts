@@ -15,6 +15,22 @@ test("fingerprint probe retains audio rejection instead of waiting forever for o
   expect(sample.audioHash).toBeUndefined();
 });
 
+test("fingerprint probe reads configured WebGL values when the debug extension is hidden", async () => {
+  const gl = {
+    getExtension: () => null,
+    getParameter: (value: number) => value === 0x9245 ? "IDFRI vendor" : value === 0x9246 ? "IDFRI renderer" : null,
+  };
+  const sample = await runInNewContext(`(${fingerprintProbe.toString()})()`, {
+    navigator: { userAgent: "", platform: "", language: "", languages: [], hardwareConcurrency: 1 },
+    screen: { width: 1, height: 1, availWidth: 1, availHeight: 1, colorDepth: 24 },
+    devicePixelRatio: 1,
+    document: { createElement: () => ({ getContext: (type: string) => type === "webgl" ? gl : null }) },
+    window: {},
+  });
+  expect(sample.webglVendor).toBe("IDFRI vendor");
+  expect(sample.webglRenderer).toBe("IDFRI renderer");
+});
+
 function report(over: Partial<ProfileReport>): ProfileReport {
   return {
     profileId: "p",
