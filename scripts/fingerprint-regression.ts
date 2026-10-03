@@ -44,7 +44,8 @@ async function launchAndProbe(binary: string, output: string, profile: Profile, 
   mkdirSync(userData, { recursive: true });
   const args = [
     `--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1", `--user-data-dir=${userData}`,
-    "--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--enable-unsafe-swiftshader",
+    "--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage",
+    "--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--ignore-gpu-blocklist",
     ...deriveChromiumFingerprintArgs(profile),
   ];
   const child = Bun.spawn([binary, ...args], { stdin: "pipe", stdout: "ignore", stderr: "pipe" });
