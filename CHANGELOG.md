@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- Linux 桌面包改用自构建的 IDFRI Browser Chromium 153 指纹内核，固定校验发布归档与 `chrome` 可执行文件 SHA-256，并保留完整 zygote 渲染器指纹传输。
+- Linux 桌面包改用自构建的 IDFRI Browser Chromium 153 指纹内核，固定校验发布归档、运行时身份与 `chrome` 可执行文件 SHA-256，并保留完整 zygote 渲染器指纹传输。
 - 增加指纹一致性与真实网站回归（在 HTTPS 安全上下文中验证 UA-CH、Web Crypto 与显式启用的 SwiftShader WebGL，并兼容不公开调试扩展的软件渲染器）、多窗口同步器、常用 Local API V2 和可视化自动化流程；Local API 公开文档扩展到 22 个实际路由；Linux Chromium 改用文件描述符 0 接收完整 IDFRI 指纹配置，并接入独立仓库的分段构建与发布链；修正 Linux 测试的人设/传输参数预期，以及 Windows 安装验收因 PID 复用产生的进程残留误报。
 
-- 新增 Ubuntu/Debian x64 桌面预览版：输出 DEB，固定校验 ungoogled Chromium 153 和原生 AliasMode Firefox 152，编译 Linux sidecar/MCP，携带 Node/Python Playwright 运行时，使用 Secret Service 保存敏感凭据，并在发布前完成两个浏览器的真实启动验收；Linux 版暂不启用应用内更新，Windows 自构建 IDFRI Chromium 保持不变。
+- 新增 Ubuntu/Debian x64 桌面预览版：输出 DEB，固定校验 IDFRI Browser Chromium 153 和原生 AliasMode Firefox 152，编译 Linux sidecar/MCP，携带 Node/Python Playwright 运行时，使用 Secret Service 保存敏感凭据，并在发布前完成两个浏览器的真实启动验收；Linux 版暂不启用应用内更新，Windows 自构建 IDFRI Chromium 保持不变。
 - 将主程序迁移到独立的 `16188/idfri` 单提交仓库，移除 GitHub Fork 关系和旧仓库品牌，统一公开项目、支持、更新 API、发布白名单与文档校验信息，并保持 Rust 格式检查通过；上游法定声明、Firefox 引擎名称及兼容协议标识继续保留。
 - 限制 Firefox 兼容工作流只响应 `main` 分支，并让 Linux/macOS 只验证已固定的 Firefox 运行时，避免 Release 标签重复构建或错误要求仅支持 Windows 的 IDFRI Chromium。
 - 将 Chromium 153 源码迁移到独立的 `16188/idfri-browser` 单提交仓库，固定主程序到新的初始提交，并重新发布原 ZIP、安装器与 SHA-256 校验文件；旧 Fork 仅改名备份，法定许可证与第三方声明继续保留。

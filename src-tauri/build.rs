@@ -38,7 +38,7 @@ fn main() {
         Some(if windows {
             "idfri-browser@153.0.8010.52-idfri.2"
         } else {
-            "ungoogled-chromium@153.0.8010.52-1"
+            "idfri-browser@153.0.8010.52-1.idfri3"
         }),
         "browser metadata runtime does not match the build target"
     );

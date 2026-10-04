@@ -9,7 +9,7 @@ use std::{
 #[cfg(windows)]
 const OPEN_CHROMIUM_RUNTIME_VERSION: &str = "idfri-browser@153.0.8010.52-idfri.2";
 #[cfg(target_os = "linux")]
-const OPEN_CHROMIUM_RUNTIME_VERSION: &str = "ungoogled-chromium@153.0.8010.52-1";
+const OPEN_CHROMIUM_RUNTIME_VERSION: &str = "idfri-browser@153.0.8010.52-1.idfri3";
 const FIREFOX_VERSION: &str = "152.0.4-beta.30";
 
 fn expected_firefox_executable() -> &'static str {
