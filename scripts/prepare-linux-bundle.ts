@@ -20,11 +20,12 @@ import { installSourceNode } from "../source-runtime.ts";
 import { ALIASMODE_VERSION } from "../version.ts";
 import { copyRuntimePackage } from "./prepare-windows-bundle.ts";
 
-export const LINUX_CHROMIUM_VERSION = "153.0.8010.52-1";
-export const LINUX_CHROMIUM_RUNTIME_VERSION = `ungoogled-chromium@${LINUX_CHROMIUM_VERSION}`;
-export const LINUX_CHROMIUM_ARCHIVE_NAME = `ungoogled-chromium-${LINUX_CHROMIUM_VERSION}-x86_64_linux.tar.xz`;
-export const LINUX_CHROMIUM_ARCHIVE_SHA256 = "49d01c59934c28d59caa30b3d283781bc32bfdc8b7f48bae831358526052a160";
-export const LINUX_CHROMIUM_ARCHIVE_URL = `https://github.com/ungoogled-software/ungoogled-chromium-portablelinux/releases/download/${LINUX_CHROMIUM_VERSION}/${LINUX_CHROMIUM_ARCHIVE_NAME}`;
+export const LINUX_CHROMIUM_VERSION = "153.0.8010.52-1.idfri3";
+export const LINUX_CHROMIUM_RUNTIME_VERSION = `idfri-browser@${LINUX_CHROMIUM_VERSION}`;
+export const LINUX_CHROMIUM_ARCHIVE_NAME = `idfri-browser_${LINUX_CHROMIUM_VERSION}_linux_x64.tar.xz`;
+export const LINUX_CHROMIUM_ARCHIVE_SHA256 = "fac4b625e3b43d46167a62e80da72c0051455ae337fca070cd09b645e051439f";
+export const LINUX_CHROMIUM_EXECUTABLE_SHA256 = "2ad8f62b49da3d8e20ee005df9de8e6b203a83ad15ce2534103eae59acbe1c8f";
+export const LINUX_CHROMIUM_ARCHIVE_URL = `https://github.com/16188/idfri-browser/releases/download/browser-v153.0.8010.52-idfri.3/${LINUX_CHROMIUM_ARCHIVE_NAME}`;
 
 const TARGET_TRIPLE = "x86_64-unknown-linux-gnu";
 const BUN_TARGET = "bun-linux-x64-baseline";
@@ -102,7 +103,11 @@ async function installChromium(staging: string): Promise<RuntimePin> {
   const child = Bun.spawn(["tar", "-xJf", archive, "-C", extracted], { stdout: "ignore", stderr: "inherit" });
   if (await child.exited !== 0) throw new Error("Linux Chromium 归档解压失败");
   const path = findExecutable(extracted, "chrome");
-  return { path, sha256: await sha256File(path) };
+  const sha256 = await sha256File(path);
+  if (sha256 !== LINUX_CHROMIUM_EXECUTABLE_SHA256) {
+    throw new Error("Linux Chromium 可执行文件 SHA-256 与固定版本不一致");
+  }
+  return { path, sha256 };
 }
 
 async function copyBrowserRuntime(pin: RuntimePin, destination: string, executableName: string): Promise<string> {
